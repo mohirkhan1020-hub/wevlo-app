@@ -4,22 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Wevlo — Build Websites &amp; Android APKs</title>
+  
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Stylesheet -->
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="app-bg text-main antialiased">
 
   <div class="flex min-h-screen">
-    <!-- Mobile Sidebar Overlay -->
+    <!-- Mobile Sidebar Drawer Overlay -->
     <div id="drawerOverlay" onclick="toggleDrawer(false)" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden lg:hidden"></div>
 
     <!-- Collapsible Sidebar -->
     <aside id="sidebar" class="fixed lg:sticky top-0 left-0 z-50 h-screen w-72 surface-card border-r border-soft flex flex-col justify-between transform -translate-x-full lg:translate-x-0 transition-transform duration-300 rounded-none">
       <div class="overflow-y-auto px-4 py-4 space-y-4 flex-1">
+        <!-- Logo -->
         <div class="flex items-center justify-between px-2">
           <a href="#/" onclick="navigate('#/')" class="flex items-center gap-1.5">
             <svg width="30" height="24" viewBox="0 0 36 28" fill="none">
@@ -38,6 +47,7 @@
           </button>
         </div>
 
+        <!-- Dynamic Navigation Links -->
         <nav id="sidebarNav" class="space-y-0.5 text-[13px] font-medium"></nav>
       </div>
 
@@ -63,15 +73,17 @@
       </div>
     </aside>
 
-    <!-- Main Content Wrapper -->
+    <!-- Main Content Area -->
     <div class="flex-1 flex flex-col min-w-0 pb-24 lg:pb-8">
-      <!-- Topbar -->
+      <!-- Topbar Header -->
       <header class="sticky top-0 z-30 surface-glass border-b border-soft">
         <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <!-- Dynamic Left Header (Hamburger or Back Button) -->
           <div id="headerLeft" class="flex items-center gap-3"></div>
 
+          <!-- Topbar Actions -->
           <div class="flex items-center gap-2 relative">
-            <!-- Light/Dark Theme Toggle -->
+            <!-- Light/Dark Mode Switcher -->
             <button onclick="toggleTheme()" title="Toggle Light/Dark Theme" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-soft text-xs font-bold hover:bg-purple-500/10 transition">
               <i id="themeIcon" data-lucide="sun" class="w-4 h-4 text-purple-600"></i>
               <span id="themeLabel" class="hidden sm:inline">Light</span>
@@ -82,7 +94,7 @@
               <i data-lucide="bell" class="w-5 h-5"></i>
             </button>
 
-            <!-- Profile Avatar Button -->
+            <!-- User Avatar / Profile Menu -->
             <button onclick="toggleAccountMenu()" class="flex items-center gap-1.5 focus:outline-none">
               <div class="relative">
                 <div id="userAvatar" class="w-9 h-9 rounded-full btn-purple flex items-center justify-center font-bold text-sm">W</div>
@@ -91,7 +103,7 @@
               <i data-lucide="chevron-down" class="w-4 h-4 text-muted"></i>
             </button>
 
-            <!-- Account Dropdown -->
+            <!-- Account Dropdown Menu -->
             <div id="accountMenu" class="hidden absolute right-0 top-12 w-72 surface-card rounded-2xl shadow-2xl p-4 z-50 space-y-3">
               <div class="pb-3 border-b border-soft">
                 <p id="accName" class="font-bold text-sm">Not Signed In</p>
@@ -120,7 +132,7 @@
         </div>
       </header>
 
-      <!-- Dynamic Route Content -->
+      <!-- Main Dynamic View Container -->
       <main id="appContent" class="max-w-5xl w-full mx-auto px-4 py-5 space-y-5"></main>
     </div>
   </div>
@@ -151,7 +163,7 @@
     </div>
   </nav>
 
-  <!-- New Project Modal -->
+  <!-- New Project Modal (Bottom Sheet Style) -->
   <div id="newProjectModal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm">
     <div class="surface-card w-full sm:max-w-md rounded-t-[28px] sm:rounded-[28px] p-6 space-y-4 shadow-2xl animate-slide-up">
       <div class="flex items-center justify-between">
@@ -219,9 +231,10 @@
     </div>
   </div>
 
-  <!-- Toast Notification -->
+  <!-- Toast Notification Box -->
   <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] hidden text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg"></div>
 
+  <!-- App Entry Script -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
