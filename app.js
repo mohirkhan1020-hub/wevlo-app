@@ -23,7 +23,7 @@ import {
 } from "./admin-panel.js";
 
 // ======================================================
-// ১. Firebase Config
+// 1. Firebase Config
 // ======================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBXUklgCWDOujtIuSZvW_VDnEVu6WKFrNA",
@@ -38,13 +38,18 @@ let fbApp = null, auth = null;
 try {
   fbApp = initializeApp(firebaseConfig);
   auth = getAuth(fbApp);
-} catch (err) { console.warn("Firebase init error:", err.message); }
+} catch (err) {
+  console.warn("Firebase init error:", err.message);
+}
 
 // ======================================================
-// ২. Global State (With Persistent GitHub IDE Session)
+// 2. Global State (With Persistent GitHub IDE Session)
 // ======================================================
 const savedProfile = JSON.parse(localStorage.getItem("wevlo_profile") || "null");
-if (savedProfile && savedProfile.name === "Wevlo Developer") { savedProfile.name = ""; localStorage.setItem("wevlo_profile", JSON.stringify(savedProfile)); }
+if (savedProfile && savedProfile.name === "Wevlo Developer") {
+  savedProfile.name = "";
+  localStorage.setItem("wevlo_profile", JSON.stringify(savedProfile));
+}
 const savedGhSession = JSON.parse(localStorage.getItem("wevlo_gh_session") || "null");
 
 const state = {
@@ -58,68 +63,124 @@ const state = {
   paymentConfig: { ...DEFAULT_PAYMENT_CONFIG },
   githubToken: sessionStorage.getItem("wevlo_gh_token") || null,
   githubUser: JSON.parse(sessionStorage.getItem("wevlo_gh_user") || "null"),
-  githubRepos: [], repoFilter: "",
+  githubRepos: [],
+  repoFilter: "",
   selectedGhRepo: savedGhSession?.repo || "",
   ghBranch: savedGhSession?.branch || "main",
   ghIdeActivePath: savedGhSession?.activePath || "",
   ghOpenTabs: savedGhSession?.openTabs || [],
   ghManualFw: savedGhSession?.manualFw || null,
-  ghIdeOpen: false, newRepoLang: "java",
+  ghIdeOpen: false,
+  newRepoLang: "java",
   ghJavaCode: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.widget.*;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) { super.onCreate(b); TextView t=new TextView(this); t.setText("Hello Wevlo!"); setContentView(t); }\n}`,
-  projects: JSON.parse(localStorage.getItem("wevlo_projects") || "[]"), projSearch: "",
+  projects: JSON.parse(localStorage.getItem("wevlo_projects") || "[]"),
+  projSearch: "",
   activeProjectId: localStorage.getItem("wevlo_active_project") || null,
   activities: JSON.parse(localStorage.getItem("wevlo_activities") || "[]"),
   files: JSON.parse(localStorage.getItem("wevlo_files") || "[]"),
   payments: JSON.parse(localStorage.getItem("wevlo_payments") || "[]"),
   pushLogs: JSON.parse(localStorage.getItem("wevlo_push_logs") || "[]"),
-  previewDevice: "phone", modalType: "html",
+  previewDevice: "phone",
+  modalType: "html",
   wallet: JSON.parse(localStorage.getItem("wevlo_wallet") || '{"balance":0,"deposited":0,"spent":0,"pending":0}'),
-  walletTab: "add", payMethod: "bKash", payAmount: 100, depositFileName: "",
+  walletTab: "add",
+  payMethod: "bKash",
+  payAmount: 100,
+  depositFileName: "",
   buildConfig: {
-    buildType: "Debug", pkgName: "com.wevlo.app", versionName: "1.0.0", versionCode: Number(localStorage.getItem("wevlo_ver_code") || 1),
-    fullscreen: false, jsEnabled: true, domStorage: true, permCamera: false, permLocation: false,
-    encryption: false, appLock: false, pushPro: false, adsPro: false
+    buildType: "Debug",
+    pkgName: "com.wevlo.app",
+    versionName: "1.0.0",
+    versionCode: Number(localStorage.getItem("wevlo_ver_code") || 1),
+    fullscreen: false,
+    jsEnabled: true,
+    domStorage: true,
+    permCamera: false,
+    permLocation: false,
+    encryption: false,
+    appLock: false,
+    pushPro: false,
+    adsPro: false
   },
-  web2app: { url: "https://example.com", appName: "My Awesome App", pkgName: "com.wevlo.webapp", version: "1.0.0", orientation: "Auto (Portrait & Landscape)" }
+  web2app: {
+    url: "https://example.com",
+    appName: "My Awesome App",
+    pkgName: "com.wevlo.webapp",
+    version: "1.0.0",
+    orientation: "Auto (Portrait & Landscape)"
+  }
 };
 
 // ======================================================
-// ৩. Helpers (Theme, Modals, Toast, Secret Trigger)
+// 3. Helpers (Theme, Modals, Toast, Secret Trigger)
 // ======================================================
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
-  const lbl = document.getElementById("themeLabel"), ic = document.getElementById("themeIcon");
+  const lbl = document.getElementById("themeLabel");
+  const ic = document.getElementById("themeIcon");
   if (lbl) lbl.textContent = state.theme === "dark" ? "Dark" : "Light";
   if (ic) ic.setAttribute("data-lucide", state.theme === "dark" ? "moon" : "sun");
 }
 applyTheme();
-window.toggleTheme = () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("wevlo_theme", state.theme); applyTheme(); if (window.lucide) window.lucide.createIcons(); };
 
-function saveProjects() { localStorage.setItem("wevlo_projects", JSON.stringify(state.projects)); if (state.activeProjectId) localStorage.setItem("wevlo_active_project", state.activeProjectId); }
-function addActivity(text) { state.activities.unshift({ text, time: new Date().toLocaleTimeString() }); state.activities = state.activities.slice(0, 8); localStorage.setItem("wevlo_activities", JSON.stringify(state.activities)); }
-function getActiveProject() { return state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0] || null; }
+window.toggleTheme = () => {
+  state.theme = state.theme === "light" ? "dark" : "light";
+  localStorage.setItem("wevlo_theme", state.theme);
+  applyTheme();
+  if (window.lucide) window.lucide.createIcons();
+};
+
+function saveProjects() {
+  localStorage.setItem("wevlo_projects", JSON.stringify(state.projects));
+  if (state.activeProjectId) localStorage.setItem("wevlo_active_project", state.activeProjectId);
+}
+
+function addActivity(text) {
+  state.activities.unshift({ text, time: new Date().toLocaleTimeString() });
+  state.activities = state.activities.slice(0, 8);
+  localStorage.setItem("wevlo_activities", JSON.stringify(state.activities));
+}
+
+function getActiveProject() {
+  return state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0] || null;
+}
 
 let confirmCallback = null;
 function openConfirmModal({ title, message, onConfirm }) {
-  document.getElementById("confirmTitle").textContent = title; document.getElementById("confirmMsg").textContent = message;
-  confirmCallback = onConfirm; const m = document.getElementById("confirmModal"); m.classList.remove("hidden"); m.classList.add("flex");
+  document.getElementById("confirmTitle").textContent = title;
+  document.getElementById("confirmMsg").textContent = message;
+  confirmCallback = onConfirm;
+  const m = document.getElementById("confirmModal");
+  m.classList.remove("hidden");
+  m.classList.add("flex");
 }
-window.closeConfirmModal = () => { const m = document.getElementById("confirmModal"); m.classList.add("hidden"); m.classList.remove("flex"); };
-document.getElementById("confirmOkBtn").addEventListener("click", () => { if (confirmCallback) confirmCallback(); window.closeConfirmModal(); });
+window.closeConfirmModal = () => {
+  const m = document.getElementById("confirmModal");
+  m.classList.add("hidden");
+  m.classList.remove("flex");
+};
+document.getElementById("confirmOkBtn").addEventListener("click", () => {
+  if (confirmCallback) confirmCallback();
+  window.closeConfirmModal();
+});
 
 window.showToast = (msg, type = "info") => {
-  const t = document.getElementById("toast"); t.textContent = msg;
+  const t = document.getElementById("toast");
+  t.textContent = msg;
   const bg = type === "error" ? "bg-rose-600" : type === "success" ? "bg-emerald-600" : "bg-slate-900";
   t.className = `fixed top-20 left-1/2 -translate-x-1/2 z-[60] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg max-w-[90vw] text-center ${bg}`;
   setTimeout(() => t.classList.add("hidden"), 4000);
 };
 
 // Hidden 5-tap trigger on the Wevlo logo
-let logoTapCount = 0, logoTapTimer = null;
+let logoTapCount = 0;
+let logoTapTimer = null;
 window.secretAdminTap = () => {
   logoTapCount++;
   clearTimeout(logoTapTimer);
-  logoTapTimer = setTimeout(() => { logoTapCount = 0; }, 2200);
+  logoTapTimer = setTimeout(() => {
+    logoTapCount = 0;
+  }, 2200);
   if (logoTapCount >= 5) {
     logoTapCount = 0;
     if (isAdminUser(state)) return window.navigate("#/admin");
@@ -136,7 +197,10 @@ window.submitSecretAdminPin = () => {
   const val = document.getElementById("secretAccessInput")?.value.trim();
   const activePin = getActiveAdminPin(state);
   const m = document.getElementById("secretAccessModal");
-  if (m) { m.classList.add("hidden"); m.classList.remove("flex"); }
+  if (m) {
+    m.classList.add("hidden");
+    m.classList.remove("flex");
+  }
   if (val === activePin || val === DEFAULT_MASTER_PIN) {
     sessionStorage.setItem("wevlo_admin_unlocked", "true");
     window.navigate("#/admin");
@@ -153,10 +217,15 @@ window.resumeGithubIde = async () => {
   }
 };
 
-initCloudFirestore(fbApp, { state, render: () => window.render(), showToast: window.showToast, navigate: (r) => window.navigate(r) });
+initCloudFirestore(fbApp, {
+  state,
+  render: () => window.render(),
+  showToast: window.showToast,
+  navigate: (r) => window.navigate(r)
+});
 
 // ======================================================
-// ৪. Firebase Auth + Popup-Free Fallback (Email & GitHub Token)
+// 4. Firebase Auth + Popup-Free Fallback (Email & GitHub Token)
 // ======================================================
 function injectPopupFreeAuthUI() {
   const menuBox = document.querySelector("#accountMenu .space-y-2");
@@ -164,7 +233,7 @@ function injectPopupFreeAuthUI() {
     const emailBtn = document.createElement("button");
     emailBtn.id = "btnEmailLoginMenu";
     emailBtn.className = "w-full flex items-center justify-center gap-2 border border-purple-400/50 bg-purple-500/10 text-purple-700 font-bold text-xs py-2.5 rounded-xl transition";
-    emailBtn.textContent = "✉️ Email / Password Login (No Popup)";
+    emailBtn.textContent = "Email / Password Login (No Popup)";
     emailBtn.onclick = () => {
       document.getElementById("accountMenu")?.classList.add("hidden");
       window.openEmailAuthModal();
@@ -172,7 +241,7 @@ function injectPopupFreeAuthUI() {
     const ghPatBtn = document.createElement("button");
     ghPatBtn.id = "btnGhTokenMenu";
     ghPatBtn.className = "w-full flex items-center justify-center gap-2 border border-soft hover:bg-purple-500/5 font-semibold text-xs py-2 rounded-xl transition";
-    ghPatBtn.textContent = "🔑 GitHub via Token (No Popup)";
+    ghPatBtn.textContent = "GitHub via Token (No Popup)";
     ghPatBtn.onclick = () => {
       document.getElementById("accountMenu")?.classList.add("hidden");
       window.openGhTokenModal();
@@ -200,7 +269,7 @@ function injectPopupFreeAuthUI() {
           </div>
         </div>
         <div id="pfTokenBox" class="hidden space-y-3">
-          <p class="text-muted">GitHub Settings → Developer settings → Personal access tokens (classic) থেকে <b>repo</b> ও <b>workflow</b> পারমিশনসহ Token তৈরি করে পেস্ট করুন:</p>
+          <p class="text-muted">Create a Personal Access Token (classic) in GitHub Settings → Developer settings with <b>repo</b> and <b>workflow</b> scopes:</p>
           <input id="pfGhPatInp" type="password" placeholder="ghp_xxxxxxxxxxxx" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent font-mono" />
           <button onclick="submitGhTokenConnect()" class="w-full btn-purple py-2.5 rounded-full font-bold">Connect GitHub</button>
         </div>
@@ -215,7 +284,8 @@ window.openEmailAuthModal = () => {
   document.getElementById("pfEmailBox").classList.remove("hidden");
   document.getElementById("pfTokenBox").classList.add("hidden");
   const m = document.getElementById("popupFreeAuthModal");
-  m.classList.remove("hidden"); m.classList.add("flex");
+  m.classList.remove("hidden");
+  m.classList.add("flex");
 };
 
 window.openGhTokenModal = () => {
@@ -224,28 +294,31 @@ window.openGhTokenModal = () => {
   document.getElementById("pfEmailBox").classList.add("hidden");
   document.getElementById("pfTokenBox").classList.remove("hidden");
   const m = document.getElementById("popupFreeAuthModal");
-  m.classList.remove("hidden"); m.classList.add("flex");
+  m.classList.remove("hidden");
+  m.classList.add("flex");
 };
 
 window.submitEmailAuth = async (mode) => {
   const email = document.getElementById("pfEmailInp")?.value.trim();
   const pass = document.getElementById("pfPassInp")?.value;
-  if (!email || !pass || pass.length < 6) return window.showToast("সঠিক Email ও কমপক্ষে ৬ অক্ষরের Password দিন!", "error");
+  if (!email || !pass || pass.length < 6) {
+    return window.showToast("Enter a valid email and a password of at least 6 characters!", "error");
+  }
   try {
     if (mode === "signup") await createUserWithEmailAndPassword(auth, email, pass);
     else await signInWithEmailAndPassword(auth, email, pass);
     document.getElementById("popupFreeAuthModal").classList.add("hidden");
-    window.showToast("লগইন সফল হয়েছে!", "success");
+    window.showToast("Signed in successfully!", "success");
   } catch (e) {
-    if (e.code === "auth/user-disabled") window.showToast("এই অ্যাকাউন্টটি Firebase Console-এ Disabled আছে! Users ট্যাব থেকে Enable করুন।", "error");
-    else if (e.code === "auth/operation-not-allowed") window.showToast("Firebase Console → Sign-in method থেকে Email/Password অন করুন!", "error");
+    if (e.code === "auth/user-disabled") window.showToast("This account is disabled in Firebase Console. Enable it in the Users tab.", "error");
+    else if (e.code === "auth/operation-not-allowed") window.showToast("Enable Email/Password in Firebase Console → Sign-in method!", "error");
     else window.showToast(e.message, "error");
   }
 };
 
 window.submitGhTokenConnect = async () => {
   const tok = document.getElementById("pfGhPatInp")?.value.trim();
-  if (!tok) return window.showToast("GitHub Token পেস্ট করুন!", "error");
+  if (!tok) return window.showToast("Please paste your GitHub Token!", "error");
   try {
     state.githubToken = tok;
     const u = await ghFetch("/user");
@@ -254,26 +327,46 @@ window.submitGhTokenConnect = async () => {
     sessionStorage.setItem("wevlo_gh_user", JSON.stringify(u));
     await window.loadGithubRepos();
     document.getElementById("popupFreeAuthModal").classList.add("hidden");
-    updateAccountUI(); window.render();
+    updateAccountUI();
+    window.render();
     window.showToast(`GitHub Connected: @${u.login}`, "success");
   } catch (e) {
     state.githubToken = null;
-    window.showToast("Token ভুল বা মেয়াদ শেষ! " + e.message, "error");
+    window.showToast("Invalid or expired token! " + e.message, "error");
   }
 };
 
-if (auth) onAuthStateChanged(auth, (u) => { state.user = u; updateAccountUI(); window.syncCloudUser?.(u); window.render(); });
+if (auth) {
+  onAuthStateChanged(auth, (u) => {
+    state.user = u;
+    updateAccountUI();
+    window.syncCloudUser?.(u);
+    window.render();
+  });
+}
 
 function updateAccountUI() {
   injectPopupFreeAuthUI();
-  const av = document.getElementById("userAvatar"), accName = document.getElementById("accName"), accEmail = document.getElementById("accEmail"), btnLogout = document.getElementById("btnLogoutMenu");
+  const av = document.getElementById("userAvatar");
+  const accName = document.getElementById("accName");
+  const accEmail = document.getElementById("accEmail");
+  const btnLogout = document.getElementById("btnLogoutMenu");
   if (state.user) {
     const label = state.user.displayName || state.profile.name || state.user.email || "User";
-    av.textContent = label[0].toUpperCase(); accName.textContent = label; accEmail.textContent = state.user.email || "Signed in"; btnLogout.classList.remove("hidden");
+    av.textContent = label[0].toUpperCase();
+    accName.textContent = label;
+    accEmail.textContent = state.user.email || "Signed in";
+    btnLogout.classList.remove("hidden");
   } else if (state.githubUser) {
-    av.textContent = state.githubUser.login[0].toUpperCase(); accName.textContent = state.githubUser.login; accEmail.textContent = "GitHub Connected"; btnLogout.classList.remove("hidden");
+    av.textContent = state.githubUser.login[0].toUpperCase();
+    accName.textContent = state.githubUser.login;
+    accEmail.textContent = "GitHub Connected";
+    btnLogout.classList.remove("hidden");
   } else {
-    av.textContent = "W"; accName.textContent = "Not Signed In"; accEmail.textContent = "Sign in with Email, Gmail or GitHub"; btnLogout.classList.add("hidden");
+    av.textContent = "W";
+    accName.textContent = "Not Signed In";
+    accEmail.textContent = "Sign in with Email, Gmail or GitHub";
+    btnLogout.classList.add("hidden");
   }
   document.getElementById("ghMenuLabel").textContent = state.githubToken ? `GitHub: @${state.githubUser?.login || "Connected"}` : "Connect GitHub Account";
 }
@@ -287,13 +380,13 @@ window.loginWithGoogle = async () => {
   p.setCustomParameters({ prompt: "select_account" });
   try {
     await signInWithPopup(auth, p);
-    window.showToast("Gmail লগইন সফল!", "success");
+    window.showToast("Gmail signed in successfully!", "success");
     document.getElementById("accountMenu").classList.add("hidden");
   } catch (e) {
     if (e.code === "auth/user-disabled") {
-      window.showToast("এই Gmail-টি Firebase Console → Users-এ Disabled! সেখান থেকে Enable করুন।", "error");
+      window.showToast("This Gmail account is disabled in Firebase Console. Enable it in Users.", "error");
     } else if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
-      window.showToast("মোবাইলে পপ-আপ ব্লক হয়েছে! Email/Password দিয়ে লগইন করুন।", "error");
+      window.showToast("Popup blocked on mobile! Use Email/Password login instead.", "error");
       window.openEmailAuthModal();
     } else {
       window.showToast(e.message, "error");
@@ -306,19 +399,26 @@ window.loginWithGoogle = async () => {
 window.loginWithGithub = async () => {
   if (authPopupBusy) return;
   authPopupBusy = true;
-  const p = new GithubAuthProvider(); p.addScope("repo"); p.addScope("workflow");
+  const p = new GithubAuthProvider();
+  p.addScope("repo");
+  p.addScope("workflow");
   try {
     const res = await signInWithPopup(auth, p);
     const cred = GithubAuthProvider.credentialFromResult(res);
     if (cred?.accessToken) {
-      state.githubToken = cred.accessToken; sessionStorage.setItem("wevlo_gh_token", cred.accessToken);
-      state.githubUser = await ghFetch("/user"); sessionStorage.setItem("wevlo_gh_user", JSON.stringify(state.githubUser));
-      await window.loadGithubRepos(); updateAccountUI(); window.render(); window.showToast("GitHub কানেক্ট হয়েছে!", "success");
+      state.githubToken = cred.accessToken;
+      sessionStorage.setItem("wevlo_gh_token", cred.accessToken);
+      state.githubUser = await ghFetch("/user");
+      sessionStorage.setItem("wevlo_gh_user", JSON.stringify(state.githubUser));
+      await window.loadGithubRepos();
+      updateAccountUI();
+      window.render();
+      window.showToast("GitHub connected!", "success");
     }
     document.getElementById("accountMenu").classList.add("hidden");
   } catch (e) {
     if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
-      window.showToast("মোবাইলে GitHub পপ-আপ ব্লক হয়েছে! Token দিয়ে কানেক্ট করুন।", "error");
+      window.showToast("GitHub popup blocked! Connect using a Personal Access Token.", "error");
       window.openGhTokenModal();
     } else {
       window.showToast(e.message, "error");
@@ -328,19 +428,35 @@ window.loginWithGithub = async () => {
   }
 };
 
-window.confirmLogout = () => openConfirmModal({
-  title: "Remove / Sign Out Account?", message: "Sign out and clear cached Gmail & GitHub session?",
-  onConfirm: async () => {
-    try { if (auth) await signOut(auth); if (window.indexedDB) indexedDB.deleteDatabase("firebaseLocalStorageDb"); } catch {}
-    state.user = null; state.plan = "Free"; state.githubToken = null; state.githubUser = null; state.githubRepos = []; state.ghIdeOpen = false;
-    state.selectedGhRepo = "";
-    sessionStorage.clear(); localStorage.removeItem("wevlo_profile"); localStorage.removeItem("wevlo_gh_session"); state.profile.name = "";
-    document.getElementById("accountMenu").classList.add("hidden"); updateAccountUI(); window.render(); window.showToast("Signed out!", "info");
-  }
-});
+window.confirmLogout = () =>
+  openConfirmModal({
+    title: "Remove / Sign Out Account?",
+    message: "Sign out and clear cached Gmail & GitHub session?",
+    onConfirm: async () => {
+      try {
+        if (auth) await signOut(auth);
+        if (window.indexedDB) indexedDB.deleteDatabase("firebaseLocalStorageDb");
+      } catch {}
+      state.user = null;
+      state.plan = "Free";
+      state.githubToken = null;
+      state.githubUser = null;
+      state.githubRepos = [];
+      state.ghIdeOpen = false;
+      state.selectedGhRepo = "";
+      sessionStorage.clear();
+      localStorage.removeItem("wevlo_profile");
+      localStorage.removeItem("wevlo_gh_session");
+      state.profile.name = "";
+      document.getElementById("accountMenu").classList.add("hidden");
+      updateAccountUI();
+      window.render();
+      window.showToast("Signed out!", "info");
+    }
+  });
 
 // ======================================================
-// ৫. Sidebar & Navigation
+// 5. Sidebar & Navigation
 // ======================================================
 const sidebarMenu = [
   { route: "#/", label: "Dashboard", icon: "home" },
@@ -365,9 +481,21 @@ const sidebarMenu = [
 ];
 const pageTitles = Object.fromEntries(sidebarMenu.map((i) => [i.route, i.label]).concat([["#/settings", "Settings & Profile"]]));
 
-window.navigate = (r) => { state.route = r; window.location.hash = r; window.toggleDrawer(false); window.render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
-window.addEventListener("hashchange", () => { state.route = window.location.hash || "#/"; window.render(); });
-window.toggleDrawer = (open) => { document.getElementById("sidebar").classList.toggle("-translate-x-full", !open); document.getElementById("drawerOverlay").classList.toggle("hidden", !open); };
+window.navigate = (r) => {
+  state.route = r;
+  window.location.hash = r;
+  window.toggleDrawer(false);
+  window.render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+window.addEventListener("hashchange", () => {
+  state.route = window.location.hash || "#/";
+  window.render();
+});
+window.toggleDrawer = (open) => {
+  document.getElementById("sidebar").classList.toggle("-translate-x-full", !open);
+  document.getElementById("drawerOverlay").classList.toggle("hidden", !open);
+};
 window.toggleAccountMenu = () => document.getElementById("accountMenu").classList.toggle("hidden");
 
 function renderHeaderAndNav() {
@@ -375,59 +503,107 @@ function renderHeaderAndNav() {
     ? `<button onclick="navigate('#/admin')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl mb-2 ${state.route === "#/admin" ? "btn-purple font-bold" : "bg-purple-50 text-purple-800 font-bold"}"><span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4"></i> Control Panel</span><span class="pro-badge">SYS</span></button>`
     : "";
 
-  const resumeBtn = state.githubToken && state.selectedGhRepo
-    ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-purple-600/15 text-purple-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${state.selectedGhRepo.split("/")[1]}</span><span>→</span></button>`
-    : "";
+  const resumeBtn =
+    state.githubToken && state.selectedGhRepo
+      ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-purple-600/15 text-purple-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${state.selectedGhRepo.split("/")[1]}</span><span>→</span></button>`
+      : "";
 
-  document.getElementById("sidebarNav").innerHTML = adminBtn + resumeBtn + sidebarMenu.map((item) => {
-    const mode = item.fkey ? (state.featureRules?.[item.fkey] || "free") : "free";
-    const badge = mode === "pro" ? `<span class="pro-badge">PRO</span>` : mode === "off" ? `<span class="text-[9px] bg-rose-100 text-rose-600 px-1.5 rounded-full font-bold">OFF</span>` : "";
-    return `<button onclick="navigate('${item.route}')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl transition ${state.route === item.route ? "bg-purple-50 text-purple-700 font-bold" : "text-muted hover:bg-purple-500/5"}"><span class="flex items-center gap-3"><i data-lucide="${item.icon}" class="w-4 h-4"></i><span>${item.label}</span></span>${badge}</button>`;
-  }).join("");
+  document.getElementById("sidebarNav").innerHTML =
+    adminBtn +
+    resumeBtn +
+    sidebarMenu
+      .map((item) => {
+        const mode = item.fkey ? state.featureRules?.[item.fkey] || "free" : "free";
+        const badge = mode === "pro" ? `<span class="pro-badge">PRO</span>` : mode === "off" ? `<span class="text-[9px] bg-rose-100 text-rose-600 px-1.5 rounded-full font-bold">OFF</span>` : "";
+        return `<button onclick="navigate('${item.route}')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl transition ${state.route === item.route ? "bg-purple-50 text-purple-700 font-bold" : "text-muted hover:bg-purple-500/5"}"><span class="flex items-center gap-3"><i data-lucide="${item.icon}" class="w-4 h-4"></i><span>${item.label}</span></span>${badge}</button>`;
+      })
+      .join("");
 
   document.querySelectorAll(".bnav-item").forEach((b) => b.classList.toggle("active", b.dataset.bnav === state.route));
   const subpages = ["#/build", "#/github-build", "#/subscription", "#/payments", "#/push", "#/lab", "#/files", "#/icons", "#/secure-converter", "#/docs", "#/privacy", "#/support", "#/admin"];
   const hl = document.getElementById("headerLeft");
-  const curTitle = state.route === "#/admin" && isAdminUser(state) ? "Control Center" : (pageTitles[state.route] || "Wevlo");
+  const curTitle = state.route === "#/admin" && isAdminUser(state) ? "Control Center" : pageTitles[state.route] || "Wevlo";
   hl.innerHTML = subpages.includes(state.route)
     ? `<button onclick="navigate('#/')" class="w-9 h-9 rounded-full surface-card flex items-center justify-center"><i data-lucide="arrow-left" class="w-4 h-4"></i></button><span class="font-extrabold text-lg">${curTitle}</span>`
     : `<button onclick="toggleDrawer(true)" class="lg:hidden p-2 -ml-2 rounded-xl"><i data-lucide="menu" class="w-5 h-5"></i></button><a href="#/" onclick="navigate('#/'); secretAdminTap()" class="flex items-center gap-1 lg:hidden"><svg width="26" height="20" viewBox="0 0 36 28" fill="none"><path d="M3 5L10.5 22L18 9L25.5 22L33 5" stroke="url(#wGrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-lg font-extrabold">evlo</span></a><span class="hidden lg:inline-block font-bold text-base">${curTitle}</span>`;
 }
 
-window.openNewProjectModal = (type = "html") => { window.selectModalType(type); document.getElementById("modalProjName").value = ""; const m = document.getElementById("newProjectModal"); m.classList.remove("hidden"); m.classList.add("flex"); };
-window.closeNewProjectModal = () => { const m = document.getElementById("newProjectModal"); m.classList.add("hidden"); m.classList.remove("flex"); };
-window.selectModalType = (t) => { state.modalType = t; document.querySelectorAll(".ptype-card").forEach((c) => c.classList.toggle("active", c.dataset.ptype === t)); };
+window.openNewProjectModal = (type = "html") => {
+  window.selectModalType(type);
+  document.getElementById("modalProjName").value = "";
+  const m = document.getElementById("newProjectModal");
+  m.classList.remove("hidden");
+  m.classList.add("flex");
+};
+window.closeNewProjectModal = () => {
+  const m = document.getElementById("newProjectModal");
+  m.classList.add("hidden");
+  m.classList.remove("flex");
+};
+window.selectModalType = (t) => {
+  state.modalType = t;
+  document.querySelectorAll(".ptype-card").forEach((c) => c.classList.toggle("active", c.dataset.ptype === t));
+};
 window.confirmCreateProject = () => {
   const name = document.getElementById("modalProjName").value.trim() || `Project ${state.projects.length + 1}`;
   state.projects.unshift({
-    id: "proj_" + Date.now(), name, type: state.modalType, url: "https://example.com",
+    id: "proj_" + Date.now(),
+    name,
+    type: state.modalType,
+    url: "https://example.com",
     html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title></head><body><div class="card"><h1>${name}</h1><p>Built with Wevlo</p><button onclick="go()">Get Started</button></div></body></html>`,
     css: `body{font-family:sans-serif;background:#f6f6fb;display:grid;place-items:center;min-height:100vh;margin:0}.card{background:#fff;padding:28px;border-radius:20px;text-align:center}button{background:#6d28d9;color:#fff;border:none;padding:10px 22px;border-radius:99px;font-weight:bold}`,
-    js: `function go(){alert("Hello from ${name}!")}`, updatedAt: new Date().toLocaleDateString()
+    js: `function go(){alert("Hello from ${name}!")}`,
+    updatedAt: new Date().toLocaleDateString()
   });
-  state.activeProjectId = state.projects[0].id; saveProjects(); addActivity(`Created "${name}"`); window.closeNewProjectModal();
+  state.activeProjectId = state.projects[0].id;
+  saveProjects();
+  addActivity(`Created "${name}"`);
+  window.closeNewProjectModal();
   window.navigate(state.modalType === "webview" ? "#/web2app" : "#/editor");
 };
 
 // ======================================================
-// ৬. GitHub REST API & APK Pipeline
+// 6. GitHub REST API & APK Pipeline
 // ======================================================
-function toBase64(str) { let bin = ""; new TextEncoder().encode(str).forEach((b) => (bin += String.fromCharCode(b))); return btoa(bin); }
-async function ghFetch(path, options = {}) {
-  const res = await fetch("https://api.github.com" + path, { ...options, headers: { Authorization: "Bearer " + state.githubToken, Accept: "application/vnd.github+json", "Content-Type": "application/json", ...(options.headers || {}) } });
-  const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.message || `GitHub Error (${res.status})`); return data;
+function toBase64(str) {
+  let bin = "";
+  new TextEncoder().encode(str).forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin);
 }
-window.loadGithubRepos = async () => { if (state.githubToken) try { state.githubRepos = await ghFetch("/user/repos?sort=updated&per_page=30"); } catch {} };
+async function ghFetch(path, options = {}) {
+  const res = await fetch("https://api.github.com" + path, {
+    ...options,
+    headers: {
+      Authorization: "Bearer " + state.githubToken,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `GitHub Error (${res.status})`);
+  return data;
+}
+window.loadGithubRepos = async () => {
+  if (state.githubToken) {
+    try {
+      state.githubRepos = await ghFetch("/user/repos?sort=updated&per_page=30");
+    } catch {}
+  }
+};
 
 async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, logElId }) {
-  const logEl = document.getElementById(logElId); logEl.classList.remove("hidden");
+  const logEl = document.getElementById(logElId);
+  logEl.classList.remove("hidden");
   logEl.innerHTML = `<div class="flex items-center gap-2 font-bold mb-2"><span class="spinner"></span><span id="${logElId}_t">Building...</span></div><div id="${logElId}_l" class="space-y-1"></div>`;
   const logs = document.getElementById(`${logElId}_l`);
-  if (!state.githubToken) return (logs.innerHTML = `<span class="text-rose-600 font-bold">আগে GitHub কানেক্ট করুন!</span>`);
+  if (!state.githubToken) return (logs.innerHTML = `<span class="text-rose-600 font-bold">Please connect GitHub first!</span>`);
   try {
     const owner = state.githubUser?.login || (await ghFetch("/user")).login;
     const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: repoName, private: false, auto_init: true }) });
-    const branch = r.default_branch || "main", pkgPath = pkgName.replace(/\./g, "/");
+    const branch = r.default_branch || "main";
+    const pkgPath = pkgName.replace(/\./g, "/");
     const files = [
       { path: "settings.gradle", content: `pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}\ndependencyResolutionManagement{repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS);repositories{google();mavenCentral()}}\nrootProject.name="Wevlo"\ninclude ':app'\n` },
       { path: "build.gradle", content: `plugins{id 'com.android.application' version '8.5.2' apply false}\n` },
@@ -437,7 +613,12 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, lo
       { path: `app/src/main/java/${pkgPath}/MainActivity.java`, content: `package ${pkgName};\n${javaSource}` },
       { path: ".github/workflows/wevlo-build.yml", content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - uses: softprops/action-gh-release@v2\n        with:\n          tag_name: "v1-\${{ github.run_number }}"\n          fail_on_unmatched_files: false\n          files: "app/build/outputs/apk/debug/app-debug.apk"\n` }
     ];
-    for (const f of files) await ghFetch(`/repos/${owner}/${repoName}/contents/${f.path}`, { method: "PUT", body: JSON.stringify({ message: `Add ${f.path}`, content: toBase64(f.content), branch }) });
+    for (const f of files) {
+      await ghFetch(`/repos/${owner}/${repoName}/contents/${f.path}`, {
+        method: "PUT",
+        body: JSON.stringify({ message: `Add ${f.path}`, content: toBase64(f.content), branch })
+      });
+    }
     logs.innerHTML += `<div>• Building on GitHub Actions...</div>`;
     const timer = setInterval(async () => {
       try {
@@ -446,22 +627,28 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, lo
           clearInterval(timer);
           if (latest.conclusion === "success") {
             const apk = (await ghFetch(`/repos/${owner}/${repoName}/releases/latest`)).assets?.find((a) => a.name.endsWith(".apk"));
-            if (apk) logs.innerHTML += `<div class="mt-2"><a href="${apk.browser_download_url}" class="btn-purple px-4 py-2 rounded-full text-xs font-bold inline-block">Download APK (${(apk.size / 1048576).toFixed(2)} MB)</a></div>`;
-          } else logs.innerHTML += `<div class="text-rose-600 font-bold">Failed (${latest.conclusion})</div>`;
+            if (apk) {
+              logs.innerHTML += `<div class="mt-2"><a href="${apk.browser_download_url}" class="btn-purple px-4 py-2 rounded-full text-xs font-bold inline-block">Download APK (${(apk.size / 1048576).toFixed(2)} MB)</a></div>`;
+            }
+          } else {
+            logs.innerHTML += `<div class="text-rose-600 font-bold">Failed (${latest.conclusion})</div>`;
+          }
         }
       } catch {}
     }, 7000);
-  } catch (e) { logs.innerHTML += `<div class="text-rose-600">${e.message}</div>`; }
+  } catch (e) {
+    logs.innerHTML += `<div class="text-rose-600">${e.message}</div>`;
+  }
 }
 
 // ======================================================
-// ৭. Core Screens & Feature Lock Screen
+// 7. Core Screens & Feature Lock Screen
 // ======================================================
 function renderFeatureLocked(label, mode) {
   if (mode === "off") {
-    return `<div class="wevlo-card p-8 text-center space-y-3"><i data-lucide="slash" class="w-10 h-10 mx-auto text-rose-500"></i><h2 class="text-lg font-extrabold">${label} Temporarily Unavailable</h2><p class="text-xs text-muted">এই ফিচারটি বর্তমানে বন্ধ রয়েছে।</p></div>`;
+    return `<div class="wevlo-card p-8 text-center space-y-3"><i data-lucide="slash" class="w-10 h-10 mx-auto text-rose-500"></i><h2 class="text-lg font-extrabold">${label} Temporarily Unavailable</h2><p class="text-xs text-muted">This feature is currently disabled for maintenance.</p></div>`;
   }
-  return `<div class="wevlo-card p-8 text-center space-y-4"><span class="pro-badge">PRO FEATURE</span><h2 class="text-xl font-extrabold">${label} is for Pro Users</h2><p class="text-xs text-muted">এই ফিচারটি ব্যবহার করতে আপনার অ্যাকাউন্টটি Wevlo Pro-তে আপগ্রেড করুন।</p><button onclick="navigate('#/subscription')" class="btn-purple px-6 py-3 rounded-full text-xs font-bold">Upgrade to Wevlo Pro →</button></div>`;
+  return `<div class="wevlo-card p-8 text-center space-y-4"><span class="pro-badge">PRO FEATURE</span><h2 class="text-xl font-extrabold">${label} is for Pro Users</h2><p class="text-xs text-muted">Upgrade your account to Wevlo Pro to unlock this feature.</p><button onclick="navigate('#/subscription')" class="btn-purple px-6 py-3 rounded-full text-xs font-bold">Upgrade to Wevlo Pro →</button></div>`;
 }
 
 function renderDashboard() {
@@ -517,17 +704,21 @@ function renderDashboard() {
 
 function renderProjects() {
   const filtered = state.projects.filter((p) => p.name.toLowerCase().includes(state.projSearch.toLowerCase()));
-  if (state.projects.length === 0) return `<div class="wevlo-card p-6 border-2 border-dashed border-soft text-center space-y-4"><h2 class="text-xl font-extrabold">No projects yet</h2><button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">+ Create Project</button></div>`;
+  if (state.projects.length === 0) {
+    return `<div class="wevlo-card p-6 border-2 border-dashed border-soft text-center space-y-4"><h2 class="text-xl font-extrabold">No projects yet</h2><button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">+ Create Project</button></div>`;
+  }
   return `<div class="flex flex-wrap justify-between gap-3"><h1 class="text-xl font-extrabold">My Projects (${filtered.length})</h1><div class="flex gap-2"><input value="${state.projSearch}" oninput="state.projSearch=this.value;render()" placeholder="Search..." class="border border-soft rounded-full px-4 py-1.5 text-xs bg-transparent"/><button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New</button></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">${filtered.map((p) => `<div class="wevlo-card p-5 space-y-3"><div class="flex justify-between"><div><h3 class="font-bold text-base">${p.name}</h3><p class="text-xs text-muted uppercase">${p.type}</p></div><button onclick="confirmDeleteProject('${p.id}')" class="text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div><div class="flex gap-2"><button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit</button><button onclick="openProjectInPreview('${p.id}')" class="border border-soft px-3.5 py-1.5 rounded-full text-xs font-bold">Preview</button><button onclick="openProjectInBuild('${p.id}')" class="bg-purple-50 text-purple-700 px-3.5 py-1.5 rounded-full text-xs font-bold">Build APK</button></div></div>`).join("")}</div>`;
 }
 
 function renderBuildApk() {
   const proj = getActiveProject();
-  if (!proj) return `<div class="wevlo-card p-6 text-center space-y-3"><h3 class="font-bold">No projects to build</h3><button onclick="navigate('#/projects')" class="btn-purple px-6 py-2.5 rounded-full text-xs font-bold">Go to My Projects</button></div>`;
+  if (!proj) {
+    return `<div class="wevlo-card p-6 text-center space-y-3"><h3 class="font-bold">No projects to build</h3><button onclick="navigate('#/projects')" class="btn-purple px-6 py-2.5 rounded-full text-xs font-bold">Go to My Projects</button></div>`;
+  }
   const b = state.buildConfig;
   const toggleRow = (l, k, fkey = null) => {
     const acc = fkey ? checkFeatureAccess(fkey, state) : { allowed: true, mode: "free" };
-    return `<div class="flex justify-between items-center py-1"><span>${l} ${acc.mode === "pro" ? '<span class="pro-badge">PRO</span>' : ""}</span><label class="toggle-switch"><input type="checkbox" ${b[k] ? "checked" : ""} onchange="if(${!acc.allowed}){this.checked=false;navigate('#/subscription');showToast('Wevlo Pro প্রয়োজন!','error')}else{state.buildConfig['${k}']=this.checked}"><span class="toggle-slider"></span></label></div>`;
+    return `<div class="flex justify-between items-center py-1"><span>${l} ${acc.mode === "pro" ? '<span class="pro-badge">PRO</span>' : ""}</span><label class="toggle-switch"><input type="checkbox" ${b[k] ? "checked" : ""} onchange="if(${!acc.allowed}){this.checked=false;navigate('#/subscription');showToast('Wevlo Pro required!','error')}else{state.buildConfig['${k}']=this.checked}"><span class="toggle-slider"></span></label></div>`;
   };
   return `<div class="wevlo-card p-5 space-y-4 text-xs"><b class="text-base">Build APK (${proj.name})</b><div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><input value="${b.pkgName}" oninput="state.buildConfig.pkgName=this.value" class="border border-soft rounded-xl px-3 py-2 bg-transparent"/><input id="bRepoName" value="wevlo-${proj.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}" class="border border-soft rounded-xl px-3 py-2 bg-transparent"/></div><div class="space-y-1.5 border border-soft rounded-2xl p-3.5">${toggleRow("JavaScript", "jsEnabled")}${toggleRow("AES-256-GCM Encryption", "encryption", "proEncryption")}${toggleRow("App Lock", "appLock", "proAppLock")}${toggleRow("Push Notifications", "pushPro", "proPush")}${toggleRow("AdMob Ads", "adsPro", "proAds")}</div><button onclick="buildProjectToApk('${proj.id}')" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">Start Build APK →</button><div id="buildProjLog" class="hidden border border-soft rounded-2xl p-4"></div></div>`;
 }
@@ -538,7 +729,8 @@ function renderWeb2App() {
 }
 
 function renderWallet() {
-  const w = state.wallet, pCfg = state.paymentConfig || DEFAULT_PAYMENT_CONFIG;
+  const w = state.wallet;
+  const pCfg = state.paymentConfig || DEFAULT_PAYMENT_CONFIG;
   const sendNum = state.payMethod === "bKash" ? pCfg.bkashNumber : pCfg.nagadNumber;
   return `
     <div class="hero-lavender rounded-[24px] p-5 flex justify-between items-center"><div><h1 class="text-2xl font-extrabold text-slate-900">Digital <span class="text-purple-700">Wallet</span></h1></div><div class="icon-box-purple w-11 h-11 rounded-2xl flex items-center justify-center"><i data-lucide="wallet" class="w-5 h-5"></i></div></div>
@@ -553,10 +745,13 @@ function renderWallet() {
     </div>`;
 }
 
-function renderTemplates() { return `<h1 class="text-xl font-extrabold">Templates</h1><div class="grid grid-cols-1 md:grid-cols-3 gap-4">${["Portfolio Landing", "E-Commerce Store", "News & Blog App"].map((n) => `<div class="wevlo-card p-5 space-y-3"><h3 class="font-bold text-base">${n}</h3><button onclick="cloneTemplate('${n}')" class="w-full btn-purple py-2 rounded-full text-xs font-bold">Use Template</button></div>`).join("")}</div>`; }
+function renderTemplates() {
+  return `<h1 class="text-xl font-extrabold">Templates</h1><div class="grid grid-cols-1 md:grid-cols-3 gap-4">${["Portfolio Landing", "E-Commerce Store", "News & Blog App"].map((n) => `<div class="wevlo-card p-5 space-y-3"><h3 class="font-bold text-base">${n}</h3><button onclick="cloneTemplate('${n}')" class="w-full btn-purple py-2 rounded-full text-xs font-bold">Use Template</button></div>`).join("")}</div>`;
+}
 
 function renderPreview() {
-  const proj = getActiveProject(); if (!proj) return `<div class="wevlo-card p-8 text-center text-xs text-muted">আগে একটি প্রজেক্ট তৈরি করুন।</div>`;
+  const proj = getActiveProject();
+  if (!proj) return `<div class="wevlo-card p-8 text-center text-xs text-muted">Please create a project first.</div>`;
   const doc = `<!DOCTYPE html><html><head><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
   const w = { phone: "max-w-[360px]", tablet: "max-w-[700px]", desktop: "max-w-full" }[state.previewDevice];
   return `<div class="wevlo-card p-4 flex justify-between items-center"><b class="text-sm">${proj.name}</b><div class="flex gap-1.5">${["phone", "tablet", "desktop"].map((d) => `<button onclick="state.previewDevice='${d}';render()" class="px-3 py-1 rounded-full text-xs font-bold capitalize ${state.previewDevice === d ? "btn-purple" : "border border-soft"}">${d}</button>`).join("")}</div></div><div class="flex justify-center"><iframe class="${w} w-full h-[520px] bg-white rounded-3xl border-4 border-slate-800 shadow-xl" srcdoc="${doc.replace(/"/g, "&quot;")}"></iframe></div>`;
@@ -568,47 +763,127 @@ function renderSettings() {
 }
 
 // ======================================================
-// ৮. Bindings & Router With Feature Gate
+// 8. Bindings & Router With Feature Gate
 // ======================================================
 const langKeyMap = { java: "langJava", kotlin: "langKotlin", flutter: "langFlutter", capacitor: "langCapacitor", python: "langPython" };
 window.openStudioLanguage = (lang) => {
   const acc = checkFeatureAccess(langKeyMap[lang] || "langJava", state);
   if (!acc.allowed) {
-    if (acc.mode === "off") return window.showToast("এই ল্যাঙ্গুয়েজটি বর্তমানে অনুপলব্ধ রয়েছে।", "error");
-    window.showToast("এটি Pro ফিচার! আগে Wevlo Pro নিন।", "error");
+    if (acc.mode === "off") return window.showToast("This language is currently unavailable.", "error");
+    window.showToast("This is a Pro feature! Please upgrade to Wevlo Pro.", "error");
     return window.navigate("#/subscription");
   }
-  state.newRepoLang = lang; state.ghNewProjModalOpen = true; state.ghIdeOpen = false; window.navigate("#/github-build");
+  state.newRepoLang = lang;
+  state.ghNewProjModalOpen = true;
+  state.ghIdeOpen = false;
+  window.navigate("#/github-build");
 };
 
-window.openProjectInEditor = (id) => { state.activeProjectId = id; saveProjects(); window.navigate("#/editor"); };
-window.openProjectInPreview = (id) => { state.activeProjectId = id; saveProjects(); window.navigate("#/preview"); };
-window.openProjectInBuild = (id) => { state.activeProjectId = id; saveProjects(); window.navigate("#/build"); };
-window.confirmDeleteProject = (id) => openConfirmModal({ title: "Delete Project?", message: "Delete this project?", onConfirm: () => { state.projects = state.projects.filter((p) => p.id !== id); saveProjects(); window.render(); } });
-window.updateW2A = (k, v) => { state.web2app[k] = v; if (k === "appName") { const el = document.getElementById("mockAppName"); if (el) el.textContent = v; } };
+window.openProjectInEditor = (id) => {
+  state.activeProjectId = id;
+  saveProjects();
+  window.navigate("#/editor");
+};
+window.openProjectInPreview = (id) => {
+  state.activeProjectId = id;
+  saveProjects();
+  window.navigate("#/preview");
+};
+window.openProjectInBuild = (id) => {
+  state.activeProjectId = id;
+  saveProjects();
+  window.navigate("#/build");
+};
+window.confirmDeleteProject = (id) =>
+  openConfirmModal({
+    title: "Delete Project?",
+    message: "Delete this project?",
+    onConfirm: () => {
+      state.projects = state.projects.filter((p) => p.id !== id);
+      saveProjects();
+      window.render();
+    }
+  });
+window.updateW2A = (k, v) => {
+  state.web2app[k] = v;
+  if (k === "appName") {
+    const el = document.getElementById("mockAppName");
+    if (el) el.textContent = v;
+  }
+};
 window.startWeb2AppBuild = () => {
-  const w = state.web2app, repoName = "wevlo-" + w.appName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 900 + 100);
-  runGithubApkPipeline({ repoName, appName: w.appName, pkgName: w.pkgName, javaSource: `import android.app.Activity;import android.os.Bundle;import android.webkit.*;public class MainActivity extends Activity{private WebView wv;@Override protected void onCreate(Bundle b){super.onCreate(b);wv=new WebView(this);wv.getSettings().setJavaScriptEnabled(true);wv.setWebViewClient(new WebViewClient());wv.loadUrl("${w.url}");setContentView(wv);}}`, logElId: "w2aLog" });
+  const w = state.web2app;
+  const repoName = "wevlo-" + w.appName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 900 + 100);
+  runGithubApkPipeline({
+    repoName,
+    appName: w.appName,
+    pkgName: w.pkgName,
+    javaSource: `import android.app.Activity;import android.os.Bundle;import android.webkit.*;public class MainActivity extends Activity{private WebView wv;@Override protected void onCreate(Bundle b){super.onCreate(b);wv=new WebView(this);wv.getSettings().setJavaScriptEnabled(true);wv.setWebViewClient(new WebViewClient());wv.loadUrl("${w.url}");setContentView(wv);}}`,
+    logElId: "w2aLog"
+  });
 };
 window.buildProjectToApk = (id) => {
-  const proj = state.projects.find((p) => p.id === id); if (!proj) return;
-  const fullHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "");
-  runGithubApkPipeline({ repoName: document.getElementById("bRepoName").value.trim(), appName: proj.name, pkgName: state.buildConfig.pkgName, javaSource: `import android.app.Activity;import android.os.Bundle;import android.webkit.WebView;public class MainActivity extends Activity{@Override protected void onCreate(Bundle b){super.onCreate(b);WebView w=new WebView(this);w.getSettings().setJavaScriptEnabled(true);w.loadDataWithBaseURL(null,"${fullHtml}","text/html","UTF-8",null);setContentView(w);}}`, logElId: "buildProjLog" });
+  const proj = state.projects.find((p) => p.id === id);
+  if (!proj) return;
+  const fullHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "");
+  runGithubApkPipeline({
+    repoName: document.getElementById("bRepoName").value.trim(),
+    appName: proj.name,
+    pkgName: state.buildConfig.pkgName,
+    javaSource: `import android.app.Activity;import android.os.Bundle;import android.webkit.WebView;public class MainActivity extends Activity{@Override protected void onCreate(Bundle b){super.onCreate(b);WebView w=new WebView(this);w.getSettings().setJavaScriptEnabled(true);w.loadDataWithBaseURL(null,"${fullHtml}","text/html","UTF-8",null);setContentView(w);}}`,
+    logElId: "buildProjLog"
+  });
 };
-window.cloneTemplate = (name) => { state.projects.unshift({ id: "proj_" + Date.now(), name, type: "html", html: `<h1>${name}</h1>`, css: `body{font-family:sans-serif;text-align:center;padding:30px}`, js: ``, updatedAt: new Date().toLocaleDateString() }); state.activeProjectId = state.projects[0].id; saveProjects(); window.navigate("#/editor"); };
+window.cloneTemplate = (name) => {
+  state.projects.unshift({
+    id: "proj_" + Date.now(),
+    name,
+    type: "html",
+    html: `<h1>${name}</h1>`,
+    css: `body{font-family:sans-serif;text-align:center;padding:30px}`,
+    js: ``,
+    updatedAt: new Date().toLocaleDateString()
+  });
+  state.activeProjectId = state.projects[0].id;
+  saveProjects();
+  window.navigate("#/editor");
+};
 
 window.submitWalletDeposit = async () => {
   const trx = document.getElementById("trxInput").value.trim();
-  if (!trx) return window.showToast("TrxID লিখুন!", "error");
-  const ok = await window.submitCloudPayment?.({ type: "deposit", method: state.payMethod, amount: state.payAmount, trxId: trx, screenshotName: state.depositFileName });
+  if (!trx) return window.showToast("Please enter Transaction ID (TrxID)!", "error");
+  const ok = await window.submitCloudPayment?.({
+    type: "deposit",
+    method: state.payMethod,
+    amount: state.payAmount,
+    trxId: trx,
+    screenshotName: state.depositFileName
+  });
   if (ok) {
     state.wallet.pending += 1;
-    state.payments.unshift({ id: "DEP-" + Date.now(), title: `${state.payMethod} Deposit`, amount: state.payAmount, method: state.payMethod, trx, status: "Pending", date: new Date().toLocaleDateString() });
-    localStorage.setItem("wevlo_wallet", JSON.stringify(state.wallet)); localStorage.setItem("wevlo_payments", JSON.stringify(state.payments));
-    document.getElementById("trxInput").value = ""; window.render();
+    state.payments.unshift({
+      id: "DEP-" + Date.now(),
+      title: `${state.payMethod} Deposit`,
+      amount: state.payAmount,
+      method: state.payMethod,
+      trx,
+      status: "Pending",
+      date: new Date().toLocaleDateString()
+    });
+    localStorage.setItem("wevlo_wallet", JSON.stringify(state.wallet));
+    localStorage.setItem("wevlo_payments", JSON.stringify(state.payments));
+    document.getElementById("trxInput").value = "";
+    window.render();
   }
 };
-window.saveUserProfile = () => { localStorage.setItem("wevlo_profile", JSON.stringify(state.profile)); updateAccountUI(); window.showToast("Profile saved!", "success"); };
+window.saveUserProfile = () => {
+  localStorage.setItem("wevlo_profile", JSON.stringify(state.profile));
+  updateAccountUI();
+  window.showToast("Profile saved!", "success");
+};
 
 const routeFeatureMap = {
   "#/editor": ["codeEditor", "Code Editor"],
@@ -636,8 +911,13 @@ window.render = function render() {
   const gate = routeFeatureMap[state.route];
   const gateResult = gate ? checkFeatureAccess(gate[0], state) : { allowed: true };
 
-  const isFullIde = gateResult.allowed && ((state.route === "#/editor" && !!getActiveProject()) || (state.route === "#/github-build" && !!state.ghIdeOpen && !!state.selectedGhRepo));
-  const headerEl = document.querySelector("header"), sidebarEl = document.getElementById("sidebar"), bnavEl = document.querySelector("nav.fixed"), c = document.getElementById("appContent");
+  const isFullIde =
+    gateResult.allowed &&
+    ((state.route === "#/editor" && !!getActiveProject()) || (state.route === "#/github-build" && !!state.ghIdeOpen && !!state.selectedGhRepo));
+  const headerEl = document.querySelector("header");
+  const sidebarEl = document.getElementById("sidebar");
+  const bnavEl = document.querySelector("nav.fixed");
+  const c = document.getElementById("appContent");
   if (headerEl) headerEl.classList.toggle("hidden", isFullIde);
   if (sidebarEl) sidebarEl.classList.toggle("lg:hidden", isFullIde);
   if (bnavEl) bnavEl.classList.toggle("hidden", isFullIde);
@@ -653,16 +933,35 @@ window.render = function render() {
     if (extraHtml) c.innerHTML = extraHtml;
     else {
       switch (state.route) {
-        case "#/projects": c.innerHTML = renderProjects(); break;
-        case "#/editor": c.innerHTML = renderProCodeEditor({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, openNewProjectModal: window.openNewProjectModal }); break;
-        case "#/build": c.innerHTML = renderBuildApk(); break;
-        case "#/web2app": c.innerHTML = renderWeb2App(); break;
-        case "#/github-build": c.innerHTML = renderProGithubBuild({ state, ghFetch, showToast: window.showToast, render: window.render, navigate: window.navigate, confirmLogout: window.confirmLogout, loginWithGithub: window.loginWithGithub, loadGithubRepos: window.loadGithubRepos }); break;
-        case "#/wallet": c.innerHTML = renderWallet(); break;
-        case "#/templates": c.innerHTML = renderTemplates(); break;
-        case "#/preview": c.innerHTML = renderPreview(); break;
-        case "#/settings": c.innerHTML = renderSettings(); break;
-        default: c.innerHTML = renderDashboard();
+        case "#/projects":
+          c.innerHTML = renderProjects();
+          break;
+        case "#/editor":
+          c.innerHTML = renderProCodeEditor({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, openNewProjectModal: window.openNewProjectModal });
+          break;
+        case "#/build":
+          c.innerHTML = renderBuildApk();
+          break;
+        case "#/web2app":
+          c.innerHTML = renderWeb2App();
+          break;
+        case "#/github-build":
+          c.innerHTML = renderProGithubBuild({ state, ghFetch, showToast: window.showToast, render: window.render, navigate: window.navigate, confirmLogout: window.confirmLogout, loginWithGithub: window.loginWithGithub, loadGithubRepos: window.loadGithubRepos });
+          break;
+        case "#/wallet":
+          c.innerHTML = renderWallet();
+          break;
+        case "#/templates":
+          c.innerHTML = renderTemplates();
+          break;
+        case "#/preview":
+          c.innerHTML = renderPreview();
+          break;
+        case "#/settings":
+          c.innerHTML = renderSettings();
+          break;
+        default:
+          c.innerHTML = renderDashboard();
       }
     }
   }
