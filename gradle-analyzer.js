@@ -1,6 +1,18 @@
 // ======================================================
-// Android Gradle Blueprints, Default Java Code & Linter
+// AIDE Engine: Gradle Blueprints, Libraries, Error Parser & Linter
 // ======================================================
+
+export const ANDROID_LIBRARIES = [
+  { id: "appcompat", name: "AndroidX AppCompat", impl: "implementation 'androidx.appcompat:appcompat:1.7.0'", desc: "Modern ActionBar & backward compatibility" },
+  { id: "material", name: "Material Components", impl: "implementation 'com.google.android.material:material:1.12.0'", desc: "Material buttons, cards, bottom bars" },
+  { id: "constraintlayout", name: "ConstraintLayout", impl: "implementation 'androidx.constraintlayout:constraintlayout:2.1.4'", desc: "Flexible responsive layouts" },
+  { id: "recyclerview", name: "RecyclerView", impl: "implementation 'androidx.recyclerview:recyclerview:1.3.2'", desc: "High-performance scrolling lists" },
+  { id: "cardview", name: "CardView", impl: "implementation 'androidx.cardview:cardview:1.0.0'", desc: "Rounded shadow cards" },
+  { id: "glide", name: "Glide Image Loader", impl: "implementation 'com.github.bumptech.glide:glide:4.16.0'", desc: "Fast network image loading & caching" },
+  { id: "retrofit", name: "Retrofit2 + Gson", impl: "implementation 'com.squareup.retrofit2:retrofit:2.11.0'\n    implementation 'com.squareup.retrofit2:converter-gson:2.11.0'", desc: "REST API JSON networking" },
+  { id: "okhttp", name: "OkHttp3", impl: "implementation 'com.squareup.okhttp3:okhttp:4.12.0'", desc: "HTTP & WebSocket client" },
+  { id: "lottie", name: "Lottie Animations", impl: "implementation 'com.airbnb.android:lottie:6.4.0'", desc: "JSON vector animations" }
+];
 
 export const DEFAULT_ANDROID_TEMPLATES = {
   "MainActivity.java": `package com.wevlo.app;
@@ -13,10 +25,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/**
- * Default Wevlo Java Activity
- * Use this structure to understand how Java connects with Gradle & AndroidManifest.xml
- */
 public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,13 +35,13 @@ public class MainActivity extends Activity {
         layout.setGravity(Gravity.CENTER);
 
         TextView title = new TextView(this);
-        title.setText("Hello Android from Wevlo!");
+        title.setText("Hello Android from Wevlo AIDE!");
         title.setTextSize(20f);
 
         Button btn = new Button(this);
         btn.setText("Test Action");
         btn.setOnClickListener(v ->
-            Toast.makeText(this, "Build & Java Code Working!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Build Working!", Toast.LENGTH_SHORT).show()
         );
 
         layout.addView(title);
@@ -41,7 +49,6 @@ public class MainActivity extends Activity {
         setContentView(layout);
     }
 }`,
-
   "settings.gradle": `pluginManagement {
     repositories {
         google()
@@ -59,12 +66,9 @@ dependencyResolutionManagement {
 }
 rootProject.name = "WevloAndroidApp"
 include ':app'`,
-
-  "build.gradle": `// Top-level build file for Android Gradle Plugin 8.5.2
-plugins {
+  "build.gradle": `plugins {
     id 'com.android.application' version '8.5.2' apply false
 }`,
-
   "app/build.gradle": `plugins {
     id 'com.android.application'
 }
@@ -94,13 +98,10 @@ android {
 }
 
 dependencies {
-    // Add AndroidX or third-party dependencies here if needed
 }`,
-
   "gradle.properties": `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
 android.useAndroidX=true
 android.nonTransitiveRClass=true`,
-
   "app/src/main/AndroidManifest.xml": `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
@@ -123,10 +124,27 @@ android.nonTransitiveRClass=true`,
 </manifest>`
 };
 
-export function generateWorkflowYaml(branch = "main", gradleTask = "assembleDebug", versionName = "1.0") {
+export function generateWorkflowYaml(branch = "main", gradleTask = "assembleDebug", versionName = "1.0", useCloudSigning = false) {
   const cmd = gradleTask.includes("+")
     ? gradleTask.split("+").map((t) => t.trim()).join(" ")
     : gradleTask;
+
+  const signStep = useCloudSigning
+    ? `
+      - name: Sign Release Build with Cloud Keystore
+        if: success() && (contains('${cmd}', 'Release'))
+        env:
+          KEY_PASS: \${{ secrets.WEVLO_KEY_PASS }}
+          KEY_ALIAS: \${{ secrets.WEVLO_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEY_PASS" ]; then
+            keytool -genkeypair -v -keystore release.jks -alias "\${KEY_ALIAS:-key0}" -keyalg RSA -keysize 2048 -validity 9125 -storepass "$KEY_PASS" -keypass "$KEY_PASS" -dname "CN=WevloApp, O=Wevlo, C=BD" || true
+            for f in app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab; do
+              [ -f "$f" ] && jarsigner -verbose -keystore release.jks -storepass "$KEY_PASS" -keypass "$KEY_PASS" "$f" "\${KEY_ALIAS:-key0}" || true
+            done
+          fi`
+    : "";
+
   return `name: Build Android APK / AAB
 on:
   push:
@@ -155,9 +173,23 @@ jobs:
           gradle-version: '8.7'
 
       - name: Run Gradle (${cmd})
-        run: gradle ${cmd} --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle ${cmd} --no-daemon --stacktrace 2>&1 | tee build-output.log
+${signStep}
 
-      - name: Publish Release Assets
+      - name: Upload Error Log on Failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: log-latest
+          name: Latest Build Error Log
+          prerelease: true
+          files: build-output.log
+
+      - name: Publish Release APK / AAB
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${versionName}-\${{ github.run_number }}
@@ -167,106 +199,146 @@ jobs:
             app/build/outputs/bundle/**/*.aab`;
 }
 
-export function analyzeProjectIssues({ treeFiles = [], activePath = "", activeContent = "", branch = "main" }) {
-  const problems = [];
+// Parse Real Java / Kotlin / XML / Gradle Compiler Errors from build-output.log
+export function extractCompilerErrors(logText = "") {
+  const errors = [];
+  const seen = new Set();
+  const lines = logText.split("\n");
+  for (const raw of lines) {
+    // Match patterns like: /home/runner/work/.../app/src/main/java/.../MainActivity.java:24: error: ';' expected
+    const m = raw.match(/([A-Za-z0-9_./-]+\.(?:java|kt|xml|gradle)):(\d+):\s*(error|warning)?:?\s*(.+)/i);
+    if (m) {
+      let file = m[1].replace(/^.*\/(app\/|settings\.gradle|build\.gradle)/, "$1");
+      const line = Number(m[2]);
+      const severity = (m[3] || "error").toLowerCase();
+      const message = m[4].trim();
+      const key = `${file}:${line}:${message}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        errors.push({ file, line, severity, message });
+      }
+    } else if (/^FAILURE:|>\s*Execution failed for task/i.test(raw.trim())) {
+      errors.push({ file: "Gradle", line: 1, severity: "error", message: raw.trim() });
+    }
+  }
+  return errors.slice(0, 25);
+}
+
+// Real-time Line-by-Line Java & XML Linter
+export function lintCodeLines(path, content) {
+  const issues = [];
+  if (!path || !content) return issues;
+  const lines = content.split("\n");
+
+  if (path.endsWith(".java")) {
+    if (!/^\s*package\s+[\w.]+;/m.test(content)) {
+      issues.push({ severity: "error", file: path, line: 1, message: "Missing 'package com.example.app;' declaration at line 1." });
+    }
+    let braceBalance = 0;
+    lines.forEach((ln, idx) => {
+      const lineNum = idx + 1;
+      const trimmed = ln.trim();
+      braceBalance += (ln.match(/\{/g) || []).length - (ln.match(/\}/g) || []).length;
+      if (/^(import|package|return)\s+/.test(trimmed) && !trimmed.endsWith(";") && !trimmed.endsWith("{")) {
+        issues.push({ severity: "error", file: path, line: lineNum, message: `Missing semicolon ';' at end of line ${lineNum}.` });
+      }
+    });
+    if (braceBalance !== 0) {
+      issues.push({ severity: "error", file: path, line: lines.length, message: `Unbalanced braces '{' vs '}' (difference: ${braceBalance}).` });
+    }
+  }
+
+  if (path.endsWith(".xml")) {
+    const openTags = (content.match(/<[A-Za-z0-9_.]+(?![^>]*\/>)/g) || []).length;
+    const closeTags = (content.match(/<\/[A-Za-z0-9_.]+>/g) || []).length;
+    if (openTags > closeTags + 1) {
+      issues.push({ severity: "error", file: path, line: lines.length, message: "Unclosed XML tag detected. Check opening and closing tags." });
+    }
+    if (path.includes("res/layout/") && !content.includes("android:layout_width")) {
+      issues.push({ severity: "warning", file: path, line: 1, message: "Layout XML views require 'android:layout_width' and 'android:layout_height'." });
+    }
+  }
+  return issues;
+}
+
+export function analyzeProjectIssues({ treeFiles = [], activePath = "", activeContent = "", branch = "main", compilerErrors = [] }) {
+  const problems = [...compilerErrors];
   const paths = treeFiles.map((f) => f.path);
 
-  // 1. Check essential Gradle & Manifest files
   const required = [
-    ["settings.gradle", "Missing settings.gradle — Gradle cannot locate ':app' module."],
-    ["build.gradle", "Missing root build.gradle — Android Gradle Plugin version is missing."],
-    ["app/build.gradle", "Missing app/build.gradle — compileSdk, minSdk & applicationId required."],
-    ["gradle.properties", "Missing gradle.properties — JVM memory & AndroidX flags missing."],
-    ["app/src/main/AndroidManifest.xml", "Missing AndroidManifest.xml — App launcher & permissions missing."]
+    ["settings.gradle", "Missing settings.gradle — Gradle cannot locate ':app'."],
+    ["build.gradle", "Missing root build.gradle — Android Gradle Plugin missing."],
+    ["app/build.gradle", "Missing app/build.gradle — compileSdk & applicationId required."],
+    ["gradle.properties", "Missing gradle.properties — AndroidX flags missing."],
+    ["app/src/main/AndroidManifest.xml", "Missing AndroidManifest.xml — Launcher activity missing."]
   ];
 
   for (const [reqPath, msg] of required) {
     if (paths.length > 0 && !paths.includes(reqPath)) {
-      problems.push({
-        severity: "error",
-        file: reqPath,
-        message: msg,
-        fixPath: reqPath,
-        fixContent: DEFAULT_ANDROID_TEMPLATES[reqPath]
-      });
+      problems.push({ severity: "error", file: reqPath, line: 1, message: msg, fixPath: reqPath, fixContent: DEFAULT_ANDROID_TEMPLATES[reqPath] });
     }
   }
 
-  // Check workflow file
   if (paths.length > 0 && !paths.some((p) => p.startsWith(".github/workflows/") && p.endsWith(".yml"))) {
     problems.push({
       severity: "warning",
       file: ".github/workflows/wevlo-build.yml",
-      message: "Missing GitHub Actions workflow YAML — required for cloud APK compilation.",
+      line: 1,
+      message: "Missing GitHub Actions workflow YAML.",
       fixPath: ".github/workflows/wevlo-build.yml",
       fixContent: generateWorkflowYaml(branch)
     });
   }
 
-  // 2. Analyze currently opened file code
-  if (activePath && activeContent) {
-    if (activePath.endsWith(".java")) {
-      if (!/^\s*package\s+[\w.]+;/m.test(activeContent)) {
-        problems.push({
-          severity: "error",
-          file: activePath,
-          message: "Missing 'package com.yourapp;' declaration at top of Java file."
-        });
-      }
-      const openBraces = (activeContent.match(/\{/g) || []).length;
-      const closeBraces = (activeContent.match(/\}/g) || []).length;
-      if (openBraces !== closeBraces) {
-        problems.push({
-          severity: "error",
-          file: activePath,
-          message: `Unbalanced curly braces: found ${openBraces} '{' and ${closeBraces} '}'`
-        });
-      }
-      if (activePath.endsWith("MainActivity.java") && !activeContent.includes("onCreate")) {
-        problems.push({
-          severity: "warning",
-          file: activePath,
-          message: "MainActivity.java should override onCreate(Bundle savedInstanceState)."
-        });
-      }
-    }
-
-    if (activePath.endsWith("app/build.gradle")) {
-      if (!activeContent.includes("compileSdk")) {
-        problems.push({
-          severity: "error",
-          file: activePath,
-          message: "Missing 'compileSdk 34' inside android { ... } block."
-        });
-      }
-      if (!activeContent.includes("namespace") && !activeContent.includes("applicationId")) {
-        problems.push({
-          severity: "error",
-          file: activePath,
-          message: "Missing 'namespace' or 'applicationId' in app/build.gradle."
-        });
-      }
-    }
-
-    if (activePath.endsWith("AndroidManifest.xml")) {
-      if (!activeContent.includes("android.permission.INTERNET")) {
-        problems.push({
-          severity: "warning",
-          file: activePath,
-          message: "INTERNET permission not found in AndroidManifest.xml."
-        });
-      }
-      if (!activeContent.includes('android:exported="true"')) {
-        problems.push({
-          severity: "error",
-          file: activePath,
-          message: "Launcher activity requires android:exported=\"true\" for Android 12+ (targetSdk 34)."
-        });
-      }
-    }
-  }
-
+  problems.push(...lintCodeLines(activePath, activeContent));
   return problems;
+}
+
+export function createActivityTemplates(activityName, pkgName = "com.wevlo.app") {
+  const cleanName = activityName.replace(/[^A-Za-z0-9]/g, "");
+  const className = cleanName.endsWith("Activity") ? cleanName : cleanName + "Activity";
+  const layoutName = "activity_" + className.replace(/Activity$/, "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+
+  const javaCode = `package ${pkgName};
+
+import android.app.Activity;
+import android.os.Bundle;
+
+public class ${className} extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.${layoutName});
+    }
+}`;
+
+  const xmlCode = `<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp"
+    android:background="#F6F6FB">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="${className}"
+        android:textSize="22sp"
+        android:textColor="#0F172A" />
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Continue"
+        android:textColor="#FFFFFF"
+        android:background="#6D28D9"
+        android:padding="12dp" />
+
+</LinearLayout>`;
+
+  return { className, layoutName, javaCode, xmlCode };
 }
 
 export function runTerminalCommand(rawCmd, ctx) {
@@ -276,58 +348,29 @@ export function runTerminalCommand(rawCmd, ctx) {
   const base = (parts[0] || "").toLowerCase();
 
   if (!cmd) return [];
-  if (base === "clear" || base === "cls") {
-    clearTerminal();
-    return [];
-  }
+  if (base === "clear" || base === "cls") { clearTerminal(); return []; }
   if (base === "help") {
     return [
-      "Available Wevlo Terminal Commands:",
-      "  gradle check          - Scan project for missing Gradle/Manifest/Java code",
-      "  gradle tasks          - List supported Android Gradle build tasks",
-      "  gradle template <f>   - Show default code (e.g. app/build.gradle, MainActivity.java)",
+      "Wevlo AIDE Terminal Commands:",
+      "  gradle check          - Scan Java, XML & Gradle files for errors",
+      "  gradle tasks          - List build tasks",
+      "  gradle template <f>   - Print default template (e.g. app/build.gradle)",
       "  ls                    - List files in repository",
-      "  cat                   - Print currently open file lines",
-      "  build                 - Start Gradle APK build on GitHub Actions",
-      "  clear                 - Clear terminal output"
+      "  build                 - Start Gradle build on GitHub Actions",
+      "  clear                 - Clear terminal"
     ];
   }
-  if (base === "ls" || base === "dir") {
-    if (!treeFiles.length) return ["(No files loaded — open a repository first)"];
-    return treeFiles.slice(0, 25).map((f) => `  ${f.path}`);
-  }
-  if (base === "cat") {
-    if (!activeContent) return ["No file currently open in Editor."];
-    return [`--- ${activePath} ---`, ...activeContent.split("\n").slice(0, 25)];
-  }
-  if (base === "build") {
-    triggerBuild();
-    return ["Triggering GitHub Actions Gradle build..."];
-  }
-  if (cmd === "gradle tasks") {
-    return [
-      "Android Gradle Tasks:",
-      "  • assembleDebug   - Builds installable debug APK",
-      "  • assembleRelease - Builds release APK",
-      "  • bundleRelease   - Builds Play Store AAB bundle"
-    ];
-  }
+  if (base === "ls" || base === "dir") return treeFiles.length ? treeFiles.slice(0, 30).map((f) => `  ${f.path}`) : ["(No files)"];
+  if (base === "build") { triggerBuild(); return ["Triggering GitHub Actions Gradle build..."]; }
+  if (cmd === "gradle tasks") return ["Tasks: assembleDebug, assembleRelease, bundleRelease"];
   if (cmd === "gradle check" || base === "doctor") {
     const issues = analyzeProjectIssues({ treeFiles, activePath, activeContent, branch });
-    if (!issues.length) return ["✓ All required Gradle files, Manifest & active code checks passed!"];
-    return [
-      `Found ${issues.length} issue(s) — open Problems tab to Auto-Fix:`,
-      ...issues.map((i) => `  [${i.severity.toUpperCase()}] ${i.file}: ${i.message}`)
-    ];
+    if (!issues.length) return ["✓ Zero Gradle, Manifest or Java syntax issues found!"];
+    return [`Found ${issues.length} issue(s):`, ...issues.map((i) => `  [${i.severity.toUpperCase()}] ${i.file}:${i.line} - ${i.message}`)];
   }
   if (parts[0] === "gradle" && parts[1] === "template") {
-    const target = parts[2] || "app/build.gradle";
-    const tpl = DEFAULT_ANDROID_TEMPLATES[target];
-    if (!tpl) {
-      return [`Unknown template '${target}'. Try: ${Object.keys(DEFAULT_ANDROID_TEMPLATES).join(", ")}`];
-    }
-    return [`--- Default ${target} ---`, ...tpl.split("\n")];
+    const tpl = DEFAULT_ANDROID_TEMPLATES[parts[2] || "app/build.gradle"];
+    return tpl ? tpl.split("\n") : ["Template not found."];
   }
-
-  return [`Command not found: '${cmd}'. Type 'help' to see available commands.`];
+  return [`Command not found: '${cmd}'. Type 'help'.`];
 }
