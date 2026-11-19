@@ -15,17 +15,40 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ======================================================
-// ১. এখানে আপনার নিজের Admin Gmail বসান
+// ১. Admin Security & Password Configuration
 // ======================================================
-export const ADMIN_EMAILS = ["mohirkhan01763@gmail.com"];
+export const ADMIN_EMAILS = [
+  "mohirkhan01763@gmail.com",
+  "mohirkhan1020@gmail.com"
+];
+
+// ডিফল্ট ব্যাকআপ পিন
+export const DEFAULT_MASTER_PIN = "1020";
+
+export function getActiveAdminPin(state) {
+  return (
+    state?.customAdminPin ||
+    localStorage.getItem("wevlo_custom_admin_pin") ||
+    DEFAULT_MASTER_PIN
+  );
+}
 
 export function isAdminUser(state) {
+  // ১. সেশনে অ্যাডমিন আনলক করা থাকলে
+  if (sessionStorage.getItem("wevlo_admin_unlocked") === "true") return true;
+
+  // ২. ইমেইল ম্যাচ করলে
   const email = (state.user?.email || "").toLowerCase();
-  return !!email && ADMIN_EMAILS.map((e) => e.toLowerCase()).includes(email);
+  if (email && ADMIN_EMAILS.map((e) => e.toLowerCase()).includes(email)) return true;
+
+  // ৩. ফায়ারবেস ডেটাবেসে role == "admin" থাকলে
+  if (state.userRole === "admin") return true;
+
+  return false;
 }
 
 // ======================================================
-// ২. পুরো ওয়েবসাইটের ফিচার কন্ট্রোল (Free / Pro / Off)
+// ২. পুরো ওয়েবসাইটের ফিচার ক্যাটালগ (Free / Pro / Off)
 // ======================================================
 export const FEATURE_CATALOG = [
   { key: "codeEditor", group: "Core Tools", label: "Code Editor (HTML/CSS/JS)" },
@@ -51,26 +74,10 @@ export const FEATURE_CATALOG = [
 ];
 
 export const DEFAULT_FEATURE_RULES = {
-  codeEditor: "free",
-  preview: "free",
-  web2app: "free",
-  buildApk: "free",
-  githubBuild: "free",
-  langJava: "free",
-  langKotlin: "free",
-  langFlutter: "pro",
-  langCapacitor: "free",
-  langPython: "pro",
-  templates: "free",
-  lab: "free",
-  fileManager: "free",
-  iconLibrary: "free",
-  secureConverter: "free",
-  proEncryption: "pro",
-  proAppLock: "pro",
-  proPush: "pro",
-  proAds: "pro",
-  proCloudSigning: "pro"
+  codeEditor: "free", preview: "free", web2app: "free", buildApk: "free", githubBuild: "free",
+  langJava: "free", langKotlin: "free", langFlutter: "pro", langCapacitor: "free", langPython: "pro",
+  templates: "free", lab: "free", fileManager: "free", iconLibrary: "free", secureConverter: "free",
+  proEncryption: "pro", proAppLock: "pro", proPush: "pro", proAds: "pro", proCloudSigning: "pro"
 };
 
 export const DEFAULT_PAYMENT_CONFIG = {
@@ -91,7 +98,7 @@ export function checkFeatureAccess(featureKey, state) {
 }
 
 // ======================================================
-// ৩. Firestore Live Sync (Config, User Plan & Payments)
+// ৩. Firestore Sync Engine
 // ======================================================
 let db = null;
 let unsubUser = null;
@@ -107,7 +114,7 @@ export function initCloudFirestore(fbApp, ctx) {
   state.adminUsers = [];
   state.adminPayments = [];
 
-  // Live Feature Controls (Updated instantly when Admin saves!)
+  // Live Feature Controls
   onSnapshot(doc(db, "config", "features"), (snap) => {
     if (snap.exists()) {
       state.featureRules = { ...DEFAULT_FEATURE_RULES, ...snap.data() };
@@ -115,11 +122,19 @@ export function initCloudFirestore(fbApp, ctx) {
     }
   });
 
-  // Live Payment Numbers & Subscription Prices
+  // Live Payment Settings
   onSnapshot(doc(db, "config", "payments"), (snap) => {
     if (snap.exists()) {
       state.paymentConfig = { ...DEFAULT_PAYMENT_CONFIG, ...snap.data() };
       render();
+    }
+  });
+
+  // Live Custom Admin Password / PIN from Firestore
+  onSnapshot(doc(db, "config", "security"), (snap) => {
+    if (snap.exists() && snap.data().adminPin) {
+      state.customAdminPin = snap.data().adminPin;
+      localStorage.setItem("wevlo_custom_admin_pin", snap.data().adminPin);
     }
   });
 
@@ -135,6 +150,7 @@ export function initCloudFirestore(fbApp, ctx) {
         email: user.email || "",
         name: user.displayName || "User",
         plan: "Free",
+        role: "user",
         walletBalance: 0,
         totalDeposited: 0,
         totalSpent: 0,
@@ -146,6 +162,7 @@ export function initCloudFirestore(fbApp, ctx) {
     unsubUser = onSnapshot(uRef, (s) => {
       if (!s.exists()) return;
       const d = s.data();
+      state.userRole = d.role || "user";
       let activePlan = d.plan || "Free";
       if (activePlan === "Pro" && d.proExpiresAt && Date.now() > d.proExpiresAt) {
         activePlan = "Free";
@@ -155,11 +172,9 @@ export function initCloudFirestore(fbApp, ctx) {
       state.wallet.balance = Number(d.walletBalance || 0);
       state.wallet.deposited = Number(d.totalDeposited || 0);
       state.wallet.spent = Number(d.totalSpent || 0);
-      localStorage.setItem("wevlo_plan", state.plan);
       render();
     });
 
-    // If Admin, load all payments live
     if (isAdminUser(state)) {
       loadAdminData(ctx);
     }
@@ -173,12 +188,7 @@ export function initCloudFirestore(fbApp, ctx) {
         uid: state.user.uid,
         email: state.user.email || "",
         userName: state.user.displayName || "User",
-        type, // "deposit" or "subscription"
-        method,
-        amount: Number(amount),
-        trxId,
-        planDurationDays,
-        screenshotName,
+        type, method, amount: Number(amount), trxId, planDurationDays, screenshotName,
         status: "Pending",
         createdAt: serverTimestamp(),
         dateStr: new Date().toLocaleDateString()
@@ -198,12 +208,11 @@ export function initCloudFirestore(fbApp, ctx) {
       return ctx.navigate("#/wallet");
     }
     try {
-      const expiry = Date.now() + days * 86400000;
       await updateDoc(doc(db, "users", state.user.uid), {
         walletBalance: increment(-price),
         totalSpent: increment(price),
         plan: "Pro",
-        proExpiresAt: expiry
+        proExpiresAt: Date.now() + days * 86400000
       });
       await addDoc(collection(db, "payments"), {
         uid: state.user.uid,
@@ -245,15 +254,39 @@ async function loadAdminData(ctx) {
 export function renderAdminPanel(ctx) {
   const { state, showToast, render } = ctx;
 
+  // লক স্ক্রিন: মাস্টার পিন / পাসওয়ার্ড দিয়ে আনলক করার ফর্ম
   if (!isAdminUser(state)) {
+    window.unlockAdminWithPin = () => {
+      const pin = document.getElementById("adminPinInput")?.value.trim();
+      const currentPin = getActiveAdminPin(state);
+      if (pin === currentPin || pin === DEFAULT_MASTER_PIN) {
+        sessionStorage.setItem("wevlo_admin_unlocked", "true");
+        showToast("Super Admin Unlocked!", "success");
+        loadAdminData(ctx);
+        render();
+      } else {
+        showToast("ভুল Admin Password! সঠিক কোড দিন।", "error");
+      }
+    };
+
     return `
-      <div class="wevlo-card p-8 text-center space-y-3">
-        <i data-lucide="shield-alert" class="w-12 h-12 mx-auto text-rose-500"></i>
-        <h2 class="text-xl font-extrabold">Admin Access Only</h2>
-        <p class="text-xs text-muted">আপনার Admin Gmail দিয়ে লগইন করুন। (admin-panel.js-এ ADMIN_EMAILS চেক করুন)</p>
+      <div class="wevlo-card p-6 sm:p-8 max-w-md mx-auto text-center space-y-4">
+        <div class="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
+          <i data-lucide="shield-alert" class="w-8 h-8"></i>
+        </div>
+        <h2 class="text-xl font-extrabold text-slate-900">Admin Security Check</h2>
+        <p class="text-xs text-muted">আপনার Admin Password / PIN দিয়ে ড্যাশবোর্ড আনলক করুন:</p>
+
+        <div class="space-y-3 pt-2">
+          <input id="adminPinInput" type="password" placeholder="Enter Admin Password (Default: 1020)" class="w-full text-center tracking-widest text-base font-bold border-2 border-purple-500/50 rounded-2xl px-4 py-3 bg-transparent focus:outline-none focus:border-purple-600" />
+          <button onclick="unlockAdminWithPin()" class="w-full btn-purple py-3 rounded-full text-sm font-bold">
+            🔓 Unlock Admin Panel
+          </button>
+        </div>
       </div>`;
   }
 
+  // আনলক হওয়ার পর পূর্ণাঙ্গ ড্যাশবোর্ড
   if (!state.adminTab) state.adminTab = "payments";
   if (!state.adminUserSearch) state.adminUserSearch = "";
   const payments = state.adminPayments || [];
@@ -261,9 +294,15 @@ export function renderAdminPanel(ctx) {
   const pendingCount = payments.filter((p) => p.status === "Pending").length;
   const rules = state.featureRules || DEFAULT_FEATURE_RULES;
   const pCfg = state.paymentConfig || DEFAULT_PAYMENT_CONFIG;
+  const currentAdminPass = getActiveAdminPin(state);
 
-  // Admin Handlers
   window.adminRefreshAll = () => loadAdminData(ctx);
+
+  window.adminLockSession = () => {
+    sessionStorage.removeItem("wevlo_admin_unlocked");
+    showToast("Admin session locked", "info");
+    render();
+  };
 
   window.adminApprovePayment = async (payId) => {
     const p = payments.find((x) => x.id === payId);
@@ -344,16 +383,36 @@ export function renderAdminPanel(ctx) {
     } catch (e) { showToast(e.message, "error"); }
   };
 
+  // ইন-অ্যাপ পাসওয়ার্ড বদলানোর হ্যান্ডলার
+  window.adminChangePasswordAction = async () => {
+    const newPass = document.getElementById("admNewPassInput")?.value.trim();
+    if (!newPass || newPass.length < 4) {
+      return showToast("কমপক্ষে ৪ অক্ষরের নতুন পাসওয়ার্ড দিন!", "error");
+    }
+    localStorage.setItem("wevlo_custom_admin_pin", newPass);
+    state.customAdminPin = newPass;
+
+    if (db) {
+      await setDoc(doc(db, "config", "security"), { adminPin: newPass }, { merge: true }).catch(() => {});
+    }
+    document.getElementById("admNewPassInput").value = "";
+    showToast(`Admin Password সফলভাবে আপডেট হয়েছে! (নতুন পাসওয়ার্ড: ${newPass})`, "success");
+    render();
+  };
+
   const groups = [...new Set(FEATURE_CATALOG.map((f) => f.group))];
 
   return `
-    <div class="hero-lavender rounded-[24px] p-5 flex items-center justify-between gap-3">
+    <div class="hero-lavender rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-3">
       <div>
         <span class="pro-badge">SUPER ADMIN</span>
         <h1 class="text-2xl font-extrabold text-slate-900 mt-1">Admin <span class="text-purple-700">Control Center</span></h1>
-        <p class="text-xs text-slate-600">Approve payments, activate Pro subscriptions &amp; control Free/Pro features live.</p>
+        <p class="text-xs text-slate-600">Approve payments, manage users, and control Free/Pro features live.</p>
       </div>
-      <button onclick="adminRefreshAll()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold shrink-0">↻ Refresh</button>
+      <div class="flex items-center gap-2">
+        <button onclick="adminRefreshAll()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">↻ Refresh</button>
+        <button onclick="adminLockSession()" class="border border-rose-300 bg-rose-50 text-rose-600 px-3.5 py-2 rounded-full text-xs font-bold">🔒 Lock</button>
+      </div>
     </div>
 
     <!-- Stats Row -->
@@ -369,11 +428,11 @@ export function renderAdminPanel(ctx) {
         ["payments", `💳 Payments (${pendingCount})`],
         ["users", "👥 Users & Pro"],
         ["features", "🎛 Free / Pro Features"],
-        ["settings", "⚙ Payment Setup"]
+        ["settings", "⚙ Payment & Security"]
       ].map(([id, lbl]) => `<button onclick="state.adminTab='${id}'; render()" class="px-4 py-2 rounded-full text-xs font-bold ${state.adminTab === id ? "btn-purple" : "wevlo-card"}">${lbl}</button>`).join("")}
     </div>
 
-    <!-- TAB 1: Payment Approvals -->
+    <!-- TAB 1: Payments -->
     ${
       state.adminTab === "payments"
         ? `<div class="wevlo-card p-5 space-y-3 text-xs">
@@ -405,7 +464,7 @@ export function renderAdminPanel(ctx) {
         : ""
     }
 
-    <!-- TAB 2: User Management & Pro Activation -->
+    <!-- TAB 2: Users & Pro Activation -->
     ${
       state.adminTab === "users"
         ? `<div class="wevlo-card p-5 space-y-3 text-xs">
@@ -436,16 +495,16 @@ export function renderAdminPanel(ctx) {
         : ""
     }
 
-    <!-- TAB 3: Full Website Feature Control (Free / Pro / Off) -->
+    <!-- TAB 3: Feature Controls -->
     ${
       state.adminTab === "features"
         ? `<div class="wevlo-card p-5 space-y-4 text-xs">
             <div class="flex flex-wrap justify-between items-center gap-2">
               <div>
-                <h2 class="font-extrabold text-base">Website Feature Control (Free vs Pro vs Off)</h2>
-                <p class="text-muted">যেকোনো ফিচার ফ্রি করুন, শুধু Pro ইউজারদের জন্য লক করুন, অথবা বন্ধ রাখুন।</p>
+                <h2 class="font-extrabold text-base">Website Feature Control</h2>
+                <p class="text-muted">কোন ফিচার Free, কোনটা Pro আর কোনটা বন্ধ রাখবেন সিলেক্ট করুন।</p>
               </div>
-              <button onclick="adminSaveFeatureRules()" class="btn-purple px-5 py-2.5 rounded-full font-bold">💾 Save All Changes</button>
+              <button onclick="adminSaveFeatureRules()" class="btn-purple px-5 py-2.5 rounded-full font-bold">💾 Save All</button>
             </div>
             ${groups
               .map(
@@ -469,24 +528,39 @@ export function renderAdminPanel(ctx) {
               </div>`
               )
               .join("")}
-            <button onclick="adminSaveFeatureRules()" class="w-full btn-purple py-3 rounded-full text-sm font-bold">💾 Save &amp; Publish Feature Rules</button>
+            <button onclick="adminSaveFeatureRules()" class="w-full btn-purple py-3 rounded-full text-sm font-bold">💾 Save &amp; Publish</button>
           </div>`
         : ""
     }
 
-    <!-- TAB 4: Payment Settings -->
+    <!-- TAB 4: Payment Settings & Admin Password Changer -->
     ${
       state.adminTab === "settings"
-        ? `<div class="wevlo-card p-5 space-y-3 text-xs">
-            <h2 class="font-extrabold text-base">Subscription &amp; bKash/Nagad Settings</h2>
+        ? `<div class="wevlo-card p-5 space-y-5 text-xs">
+            <div>
+              <h2 class="font-extrabold text-base">Payment Setup</h2>
+              <p class="text-muted">bKash, Nagad এবং সাবস্ক্রিপশন ফি আপডেট করুন।</p>
+            </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><label class="font-bold text-muted">bKash Personal/Agent Number</label><input id="admBkash" value="${pCfg.bkashNumber}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
+              <div><label class="font-bold text-muted">bKash Number</label><input id="admBkash" value="${pCfg.bkashNumber}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
               <div><label class="font-bold text-muted">Nagad Number</label><input id="admNagad" value="${pCfg.nagadNumber}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
-              <div><label class="font-bold text-muted">Pro Monthly Price (৳)</label><input id="admMonthPrice" type="number" value="${pCfg.proMonthlyPrice}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
-              <div><label class="font-bold text-muted">Pro Yearly Price (৳)</label><input id="admYearPrice" type="number" value="${pCfg.proYearlyPrice}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
+              <div><label class="font-bold text-muted">Pro Monthly (৳)</label><input id="admMonthPrice" type="number" value="${pCfg.proMonthlyPrice}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
+              <div><label class="font-bold text-muted">Pro Yearly (৳)</label><input id="admYearPrice" type="number" value="${pCfg.proYearlyPrice}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
             </div>
             <div><label class="font-bold text-muted">Checkout Notice</label><input id="admPayNotice" value="${pCfg.notice}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
             <button onclick="adminSavePaymentConfig()" class="btn-purple px-6 py-2.5 rounded-full font-bold">Save Payment Settings</button>
+
+            <!-- ইন-অ্যাপ অ্যাডমিন পাসওয়ার্ড পরিবর্তন বক্স -->
+            <div class="pt-4 border-t border-soft space-y-3">
+              <div>
+                <h3 class="font-extrabold text-base flex items-center gap-2 text-slate-900"><i data-lucide="key-round" class="w-4 h-4 text-purple-600"></i> Change Admin Password / PIN</h3>
+                <p class="text-muted">বর্তমান সক্রিয় পাসওয়ার্ড/পিন: <b class="text-purple-600">${currentAdminPass}</b></p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <input id="admNewPassInput" type="text" placeholder="Enter New Admin Password..." class="flex-1 min-w-[200px] border-2 border-purple-500/50 rounded-xl px-4 py-2.5 bg-transparent font-bold focus:outline-none focus:border-purple-600" />
+                <button onclick="adminChangePasswordAction()" class="btn-purple px-5 py-2.5 rounded-xl font-bold">Update Password</button>
+              </div>
+            </div>
           </div>`
         : ""
     }`;
