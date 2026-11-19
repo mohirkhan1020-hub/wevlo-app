@@ -71,25 +71,8 @@ dependencyResolutionManagement {
 rootProject.name = "WevloApp"
 include ':app'`,
 
-  "build.gradle": `buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.5.2'
-    }
-}
-
-plugins {
+  "build.gradle": `plugins {
     id 'com.android.application' version '8.5.2' apply false
-}
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
 }`,
 
   "app/build.gradle": `plugins {
@@ -158,9 +141,9 @@ export const FRAMEWORK_STARTERS = {
   },
   kotlin: {
     "settings.gradle": DEFAULT_ANDROID_TEMPLATES["settings.gradle"],
-    "build.gradle": `buildscript { repositories { google(); mavenCentral() }; dependencies { classpath 'com.android.tools.build:gradle:8.5.2'; classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24' } }\nplugins { id 'com.android.application' version '8.5.2' apply false; id 'org.jetbrains.kotlin.android' version '1.9.24' apply false }`,
+    "build.gradle": `plugins {\n    id 'com.android.application' version '8.5.2' apply false\n    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false\n}`,
     "gradle.properties": DEFAULT_ANDROID_TEMPLATES["gradle.properties"],
-    "app/build.gradle": `plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }\nandroid { namespace 'com.wevlo.app'; compileSdk 34; defaultConfig { applicationId "com.wevlo.app"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }; compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }; kotlinOptions { jvmTarget = '17' } }\ndependencies { implementation 'androidx.core:core-ktx:1.13.1' }`,
+    "app/build.gradle": `plugins {\n    id 'com.android.application'\n    id 'org.jetbrains.kotlin.android'\n}\nandroid {\n    namespace 'com.wevlo.app'\n    compileSdk 34\n    defaultConfig {\n        applicationId "com.wevlo.app"\n        minSdk 24\n        targetSdk 34\n        versionCode 1\n        versionName "1.0"\n    }\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n    kotlinOptions {\n        jvmTarget = '17'\n    }\n}\ndependencies {\n    implementation 'androidx.core:core-ktx:1.13.1'\n}`,
     "app/src/main/AndroidManifest.xml": DEFAULT_ANDROID_TEMPLATES["app/src/main/AndroidManifest.xml"],
     "app/src/main/java/com/wevlo/app/MainActivity.kt": `package com.wevlo.app\n\nimport android.app.Activity\nimport android.os.Bundle\nimport android.widget.TextView\n\nclass MainActivity : Activity() {\n    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n        val tv = TextView(this).apply { text = "Hello Kotlin Android!"; textSize = 22f }\n        setContentView(tv)\n    }\n}`
   },
@@ -169,7 +152,7 @@ export const FRAMEWORK_STARTERS = {
     "lib/main.dart": `import 'package:flutter/material.dart';\n\nvoid main() => runApp(const MyApp());\n\nclass MyApp extends StatelessWidget {\n  const MyApp({super.key});\n  @override\n  Widget build(BuildContext context) {\n    return MaterialApp(home: Scaffold(appBar: AppBar(title: const Text('Wevlo Flutter')), body: const Center(child: Text('Flutter APK Ready!'))));\n  }\n}`
   },
   capacitor: {
-    "package.json": `{\n  "name": "wevlo-capacitor-app",\n  "version": "1.0.0",\n  "dependencies": { "@capacitor/core": "^6.1.0", "@capacitor/android": "^6.1.0" }\n}`,
+    "package.json": `{\n  "name": "wevlo-capacitor-app",\n  "version": "1.0.0",\n  "dependencies": { "@capacitor/core": "^6.1.0", "@capacitor/android": "^6.1.0", "@capacitor/cli": "^6.1.0" }\n}`,
     "capacitor.config.json": `{\n  "appId": "com.wevlo.capapp",\n  "appName": "Wevlo Cap",\n  "webDir": "www"\n}`,
     "www/index.html": `<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:40px"><h1>Capacitor App</h1><button onclick="alert('Native Working!')">Click Me</button></body></html>`
   },
@@ -190,25 +173,175 @@ export function detectFramework(treeFiles = []) {
 
 export function generateWorkflowYaml(branch = "main", gradleTask = "assembleDebug", versionName = "1.0", useCloudSigning = false, framework = "java") {
   if (framework === "flutter") {
-    const flCmd = gradleTask.includes("bundle") ? "flutter build appbundle --release" : gradleTask.includes("Release") ? "flutter build apk --release" : "flutter build apk --debug";
-    return `name: Build Flutter APK\non:\n  push:\n    branches: [ "${branch}" ]\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: subosito/flutter-action@v2\n        with: { channel: 'stable', cache: true }\n      - run: flutter pub get && ${flCmd}\n      - uses: softprops/action-gh-release@v2\n        with: { tag_name: v${versionName}-\${{ github.run_number }}, files: "build/app/outputs/flutter-apk/*.apk" }\n`;
+    const flCmd = gradleTask.includes("bundle")
+      ? "flutter build appbundle --release"
+      : gradleTask.includes("Release")
+      ? "flutter build apk --release"
+      : "flutter build apk --debug";
+    return `name: Build Flutter APK
+on:
+  push:
+    branches: [ "${branch}" ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - name: Build Flutter
+        run: |
+          set -o pipefail
+          flutter pub get
+          ${flCmd} 2>&1 | tee build-output.log
+      - uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${versionName}-\${{ github.run_number }}
+          fail_on_unmatched_files: false
+          files: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/release/*.aab
+      - uses: softprops/action-gh-release@v2
+        if: failure()
+        with:
+          tag_name: log-latest
+          fail_on_unmatched_files: false
+          files: build-output.log
+`;
+  }
+
+  if (framework === "capacitor") {
+    const capTask = gradleTask.includes("bundle") ? "bundleRelease" : gradleTask.includes("Release") ? "assembleRelease" : "assembleDebug";
+    return `name: Build Capacitor APK
+on:
+  push:
+    branches: [ "${branch}" ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Build Capacitor Android
+        run: |
+          set -o pipefail
+          npm install
+          if [ ! -d "android" ]; then npx cap add android; fi
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew ${capTask} --no-daemon --stacktrace 2>&1 | tee ../build-output.log
+      - uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${versionName}-\${{ github.run_number }}
+          fail_on_unmatched_files: false
+          files: |
+            android/app/build/outputs/apk/**/*.apk
+            android/app/build/outputs/bundle/**/*.aab
+      - uses: softprops/action-gh-release@v2
+        if: failure()
+        with:
+          tag_name: log-latest
+          fail_on_unmatched_files: false
+          files: build-output.log
+`;
   }
 
   if (framework === "python") {
-    return `name: Build Python APK\non:\n  push:\n    branches: [ "${branch}" ]\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: ArtemSBulgakov/buildozer-action@v1\n        with: { command: "buildozer android debug", buildozer_version: "stable" }\n      - uses: softprops/action-gh-release@v2\n        with: { tag_name: v${versionName}-\${{ github.run_number }}, files: "bin/*.apk" }\n`;
+    return `name: Build Python APK
+on:
+  push:
+    branches: [ "${branch}" ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: "buildozer android debug"
+          buildozer_version: "stable"
+      - uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${versionName}-\${{ github.run_number }}
+          fail_on_unmatched_files: false
+          files: "bin/*.apk"
+`;
   }
 
   const cmd = gradleTask.includes("+") ? gradleTask.split("+").map((t) => t.trim()).join(" ") : gradleTask;
-  return `name: Build Android APK / AAB\non:\n  push:\n    branches: [ "${branch}" ]\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with: { distribution: 'temurin', java-version: '17' }\n      - uses: gradle/actions/setup-gradle@v4\n        with: { gradle-version: '8.7' }\n      - run: gradle ${cmd} --no-daemon --stacktrace\n      - uses: softprops/action-gh-release@v2\n        with:\n          tag_name: v${versionName}-\${{ github.run_number }}\n          files: |\n            app/build/outputs/apk/**/*.apk\n            app/build/outputs/bundle/**/*.aab\n`;
+  return `name: Build Android APK / AAB
+on:
+  push:
+    branches: [ "${branch}" ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Run Gradle Build
+        run: |
+          set -o pipefail
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew ${cmd} --no-daemon --stacktrace 2>&1 | tee build-output.log
+          else
+            gradle ${cmd} --no-daemon --stacktrace 2>&1 | tee build-output.log
+          fi
+      - uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${versionName}-\${{ github.run_number }}
+          fail_on_unmatched_files: false
+          files: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/bundle/**/*.aab
+      - uses: softprops/action-gh-release@v2
+        if: failure()
+        with:
+          tag_name: log-latest
+          fail_on_unmatched_files: false
+          files: build-output.log
+`;
 }
 
 export function extractCompilerErrors(logText = "") {
   const errors = [];
   const seen = new Set();
   for (const raw of logText.split("\n")) {
-    const m = raw.match(/([A-Za-z0-9_./-]+\.(?:java|kt|dart|py|xml|gradle)):(\d+):\s*(error|warning)?:?\s*(.+)/i);
+    const m = raw.match(/([A-Za-z0-9_./-]+\.(?:java|kt|dart|py|xml|gradle|ya?ml)):(\d+):\s*(error|warning)?:?\s*(.+)/i);
     if (m) {
-      const file = m[1].replace(/^.*\/(app\/|lib\/|www\/|main\.py|settings\.gradle|build\.gradle)/, "$1");
+      const file = m[1].replace(/^.*\/(app\/|lib\/|www\/|\.github\/|main\.py|settings\.gradle|build\.gradle)/, "$1");
       const key = `${file}:${m[2]}:${m[4].trim()}`;
       if (!seen.has(key)) { seen.add(key); errors.push({ file, line: Number(m[2]), severity: (m[3] || "error").toLowerCase(), message: m[4].trim() }); }
     } else if (/^FAILURE:|>\s*Execution failed for task/i.test(raw.trim())) {
@@ -218,14 +351,72 @@ export function extractCompilerErrors(logText = "") {
   return errors.slice(0, 25);
 }
 
-export function lintCodeLines(path, content) {
+export function lintYamlWorkflow(path, content, branch = "main", framework = "java") {
   const issues = [];
-  if (!path || !content) return issues;
+  if (!path.endsWith(".yml") && !path.endsWith(".yaml")) return issues;
+  if (!content || !content.trim()) {
+    issues.push({
+      severity: "error",
+      file: path,
+      line: 1,
+      message: "Workflow YAML ফাইলটি খালি! সঠিক GitHub Actions YAML যোগ করুন।",
+      fixPath: path,
+      fixContent: generateWorkflowYaml(branch, "assembleDebug", "1.0", false, framework)
+    });
+    return issues;
+  }
+
+  const lines = content.split("\n");
+  lines.forEach((ln, idx) => {
+    if (ln.includes("\t")) {
+      issues.push({
+        severity: "error",
+        file: path,
+        line: idx + 1,
+        message: "YAML-এ Tab (\\t) ব্যবহার করা নিষেধ! কেবল Space ব্যবহার করুন।",
+        fixPath: path,
+        fixContent: content.replace(/\t/g, "  ")
+      });
+    }
+  });
+
+  if (path.includes(".github/workflows/")) {
+    if (!/^\s*on\s*:/m.test(content) || !/^\s*jobs\s*:/m.test(content)) {
+      issues.push({
+        severity: "error",
+        file: path,
+        line: 1,
+        message: "GitHub Actions YAML-এ 'on:' অথবা 'jobs:' সেকশন মিসিং।",
+        fixPath: path,
+        fixContent: generateWorkflowYaml(branch, "assembleDebug", "1.0", false, framework)
+      });
+    }
+  }
+  return issues;
+}
+
+export function lintCodeLines(path, content, branch = "main", framework = "java") {
+  const issues = [];
+  if (!path || content === undefined || content === null) return issues;
+  if (path.endsWith(".yml") || path.endsWith(".yaml")) {
+    return lintYamlWorkflow(path, content, branch, framework);
+  }
+  if (!content) return issues;
   const lines = content.split("\n");
   if (path.endsWith(".java") || path.endsWith(".kt") || path.endsWith(".dart")) {
     let bal = 0;
     lines.forEach((ln) => { bal += (ln.match(/\{/g) || []).length - (ln.match(/\}/g) || []).length; });
     if (bal !== 0) issues.push({ severity: "error", file: path, line: lines.length, message: `Unbalanced braces '{' vs '}' (diff: ${bal}).` });
+  }
+  if (path === "build.gradle" && /allprojects\s*\{[\s\S]*repositories\s*\{/.test(content)) {
+    issues.push({
+      severity: "error",
+      file: path,
+      line: 1,
+      message: "build.gradle-এ allprojects { repositories } থাকলে settings.gradle-এর FAIL_ON_PROJECT_REPOS এর সাথে কনফ্লিক্ট করে!",
+      fixPath: "build.gradle",
+      fixContent: DEFAULT_ANDROID_TEMPLATES["build.gradle"]
+    });
   }
   return issues;
 }
@@ -250,7 +441,7 @@ export function analyzeProjectIssues({ treeFiles = [], activePath = "", activeCo
       }
     }
   }
-  problems.push(...lintCodeLines(activePath, activeContent));
+  problems.push(...lintCodeLines(activePath, activeContent, branch, fw));
   return problems;
 }
 
