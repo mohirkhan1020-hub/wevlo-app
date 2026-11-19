@@ -1,8 +1,26 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  GithubAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { renderExtraPages } from "./pages-extra.js";
 import { renderProCodeEditor, renderProGithubBuild } from "./ide-editors.js";
-import { initCloudFirestore, renderAdminPanel, isAdminUser, checkFeatureAccess, DEFAULT_FEATURE_RULES, DEFAULT_PAYMENT_CONFIG } from "./admin-panel.js";
+import {
+  initCloudFirestore,
+  renderAdminPanel,
+  isAdminUser,
+  checkFeatureAccess,
+  getActiveAdminPin,
+  DEFAULT_FEATURE_RULES,
+  DEFAULT_PAYMENT_CONFIG,
+  DEFAULT_MASTER_PIN
+} from "./admin-panel.js";
 
 // ======================================================
 // ১. Firebase Config
@@ -23,10 +41,11 @@ try {
 } catch (err) { console.warn("Firebase init error:", err.message); }
 
 // ======================================================
-// ২. Global State
+// ২. Global State (With Persistent GitHub IDE Session)
 // ======================================================
 const savedProfile = JSON.parse(localStorage.getItem("wevlo_profile") || "null");
 if (savedProfile && savedProfile.name === "Wevlo Developer") { savedProfile.name = ""; localStorage.setItem("wevlo_profile", JSON.stringify(savedProfile)); }
+const savedGhSession = JSON.parse(localStorage.getItem("wevlo_gh_session") || "null");
 
 const state = {
   route: window.location.hash || "#/",
@@ -39,7 +58,13 @@ const state = {
   paymentConfig: { ...DEFAULT_PAYMENT_CONFIG },
   githubToken: sessionStorage.getItem("wevlo_gh_token") || null,
   githubUser: JSON.parse(sessionStorage.getItem("wevlo_gh_user") || "null"),
-  githubRepos: [], repoFilter: "", selectedGhRepo: "", ghBranch: "main", ghIdeOpen: false, newRepoLang: "java",
+  githubRepos: [], repoFilter: "",
+  selectedGhRepo: savedGhSession?.repo || "",
+  ghBranch: savedGhSession?.branch || "main",
+  ghIdeActivePath: savedGhSession?.activePath || "",
+  ghOpenTabs: savedGhSession?.openTabs || [],
+  ghManualFw: savedGhSession?.manualFw || null,
+  ghIdeOpen: false, newRepoLang: "java",
   ghJavaCode: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.widget.*;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) { super.onCreate(b); TextView t=new TextView(this); t.setText("Hello Wevlo!"); setContentView(t); }\n}`,
   projects: JSON.parse(localStorage.getItem("wevlo_projects") || "[]"), projSearch: "",
   activeProjectId: localStorage.getItem("wevlo_active_project") || null,
@@ -59,7 +84,7 @@ const state = {
 };
 
 // ======================================================
-// ৩. Helpers (Theme, Modals, Toast, Feature Gate)
+// ৩. Helpers (Theme, Modals, Toast, Secret Trigger)
 // ======================================================
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
@@ -85,19 +110,162 @@ document.getElementById("confirmOkBtn").addEventListener("click", () => { if (co
 window.showToast = (msg, type = "info") => {
   const t = document.getElementById("toast"); t.textContent = msg;
   const bg = type === "error" ? "bg-rose-600" : type === "success" ? "bg-emerald-600" : "bg-slate-900";
-  t.className = `fixed top-20 left-1/2 -translate-x-1/2 z-[60] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg ${bg}`;
-  setTimeout(() => t.classList.add("hidden"), 3000);
+  t.className = `fixed top-20 left-1/2 -translate-x-1/2 z-[60] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg max-w-[90vw] text-center ${bg}`;
+  setTimeout(() => t.classList.add("hidden"), 4000);
 };
 
-// Initialize Cloud Firestore (Admin Feature Control + Payments + Users)
+// Hidden 5-tap trigger on the Wevlo logo
+let logoTapCount = 0, logoTapTimer = null;
+window.secretAdminTap = () => {
+  logoTapCount++;
+  clearTimeout(logoTapTimer);
+  logoTapTimer = setTimeout(() => { logoTapCount = 0; }, 2200);
+  if (logoTapCount >= 5) {
+    logoTapCount = 0;
+    if (isAdminUser(state)) return window.navigate("#/admin");
+    const m = document.getElementById("secretAccessModal");
+    if (m) {
+      document.getElementById("secretAccessInput").value = "";
+      m.classList.remove("hidden");
+      m.classList.add("flex");
+    }
+  }
+};
+
+window.submitSecretAdminPin = () => {
+  const val = document.getElementById("secretAccessInput")?.value.trim();
+  const activePin = getActiveAdminPin(state);
+  const m = document.getElementById("secretAccessModal");
+  if (m) { m.classList.add("hidden"); m.classList.remove("flex"); }
+  if (val === activePin || val === DEFAULT_MASTER_PIN) {
+    sessionStorage.setItem("wevlo_admin_unlocked", "true");
+    window.navigate("#/admin");
+    window.showToast("Unlocked!", "success");
+  }
+};
+
+window.resumeGithubIde = async () => {
+  if (!state.selectedGhRepo) return window.navigate("#/github-build");
+  state.ghIdeOpen = true;
+  window.navigate("#/github-build");
+  if (!state.ghTreeFiles?.length && window.openGhVsCodeIde) {
+    await window.openGhVsCodeIde(state.selectedGhRepo);
+  }
+};
+
 initCloudFirestore(fbApp, { state, render: () => window.render(), showToast: window.showToast, navigate: (r) => window.navigate(r) });
 
 // ======================================================
-// ৪. Firebase Auth (Gmail & GitHub)
+// ৪. Firebase Auth + Popup-Free Fallback (Email & GitHub Token)
 // ======================================================
+function injectPopupFreeAuthUI() {
+  const menuBox = document.querySelector("#accountMenu .space-y-2");
+  if (menuBox && !document.getElementById("btnEmailLoginMenu")) {
+    const emailBtn = document.createElement("button");
+    emailBtn.id = "btnEmailLoginMenu";
+    emailBtn.className = "w-full flex items-center justify-center gap-2 border border-purple-400/50 bg-purple-500/10 text-purple-700 font-bold text-xs py-2.5 rounded-xl transition";
+    emailBtn.textContent = "✉️ Email / Password Login (No Popup)";
+    emailBtn.onclick = () => {
+      document.getElementById("accountMenu")?.classList.add("hidden");
+      window.openEmailAuthModal();
+    };
+    const ghPatBtn = document.createElement("button");
+    ghPatBtn.id = "btnGhTokenMenu";
+    ghPatBtn.className = "w-full flex items-center justify-center gap-2 border border-soft hover:bg-purple-500/5 font-semibold text-xs py-2 rounded-xl transition";
+    ghPatBtn.textContent = "🔑 GitHub via Token (No Popup)";
+    ghPatBtn.onclick = () => {
+      document.getElementById("accountMenu")?.classList.add("hidden");
+      window.openGhTokenModal();
+    };
+    menuBox.insertBefore(ghPatBtn, menuBox.children[2] || null);
+    menuBox.insertBefore(emailBtn, ghPatBtn);
+  }
+
+  if (!document.getElementById("popupFreeAuthModal")) {
+    const modal = document.createElement("div");
+    modal.id = "popupFreeAuthModal";
+    modal.className = "fixed inset-0 z-[65] hidden items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4";
+    modal.innerHTML = `
+      <div class="surface-card w-full max-w-sm rounded-[26px] p-6 space-y-4 shadow-2xl animate-slide-up text-xs">
+        <div class="flex justify-between items-center">
+          <h3 id="pfAuthTitle" class="text-base font-extrabold">Email / Password Login</h3>
+          <button onclick="document.getElementById('popupFreeAuthModal').classList.add('hidden'); document.getElementById('popupFreeAuthModal').classList.remove('flex')" class="p-1.5 rounded-full hover:bg-purple-500/10">✕</button>
+        </div>
+        <div id="pfEmailBox" class="space-y-3">
+          <input id="pfEmailInp" type="email" placeholder="your@email.com" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent" />
+          <input id="pfPassInp" type="password" placeholder="Password (min 6 chars)" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent" />
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="submitEmailAuth('login')" class="btn-purple py-2.5 rounded-full font-bold">Sign In</button>
+            <button onclick="submitEmailAuth('signup')" class="border border-purple-500 text-purple-700 py-2.5 rounded-full font-bold">Create Account</button>
+          </div>
+        </div>
+        <div id="pfTokenBox" class="hidden space-y-3">
+          <p class="text-muted">GitHub Settings → Developer settings → Personal access tokens (classic) থেকে <b>repo</b> ও <b>workflow</b> পারমিশনসহ Token তৈরি করে পেস্ট করুন:</p>
+          <input id="pfGhPatInp" type="password" placeholder="ghp_xxxxxxxxxxxx" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent font-mono" />
+          <button onclick="submitGhTokenConnect()" class="w-full btn-purple py-2.5 rounded-full font-bold">Connect GitHub</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+}
+
+window.openEmailAuthModal = () => {
+  injectPopupFreeAuthUI();
+  document.getElementById("pfAuthTitle").textContent = "Email / Password (No Popup)";
+  document.getElementById("pfEmailBox").classList.remove("hidden");
+  document.getElementById("pfTokenBox").classList.add("hidden");
+  const m = document.getElementById("popupFreeAuthModal");
+  m.classList.remove("hidden"); m.classList.add("flex");
+};
+
+window.openGhTokenModal = () => {
+  injectPopupFreeAuthUI();
+  document.getElementById("pfAuthTitle").textContent = "Connect GitHub via Token";
+  document.getElementById("pfEmailBox").classList.add("hidden");
+  document.getElementById("pfTokenBox").classList.remove("hidden");
+  const m = document.getElementById("popupFreeAuthModal");
+  m.classList.remove("hidden"); m.classList.add("flex");
+};
+
+window.submitEmailAuth = async (mode) => {
+  const email = document.getElementById("pfEmailInp")?.value.trim();
+  const pass = document.getElementById("pfPassInp")?.value;
+  if (!email || !pass || pass.length < 6) return window.showToast("সঠিক Email ও কমপক্ষে ৬ অক্ষরের Password দিন!", "error");
+  try {
+    if (mode === "signup") await createUserWithEmailAndPassword(auth, email, pass);
+    else await signInWithEmailAndPassword(auth, email, pass);
+    document.getElementById("popupFreeAuthModal").classList.add("hidden");
+    window.showToast("লগইন সফল হয়েছে!", "success");
+  } catch (e) {
+    if (e.code === "auth/user-disabled") window.showToast("এই অ্যাকাউন্টটি Firebase Console-এ Disabled আছে! Users ট্যাব থেকে Enable করুন।", "error");
+    else if (e.code === "auth/operation-not-allowed") window.showToast("Firebase Console → Sign-in method থেকে Email/Password অন করুন!", "error");
+    else window.showToast(e.message, "error");
+  }
+};
+
+window.submitGhTokenConnect = async () => {
+  const tok = document.getElementById("pfGhPatInp")?.value.trim();
+  if (!tok) return window.showToast("GitHub Token পেস্ট করুন!", "error");
+  try {
+    state.githubToken = tok;
+    const u = await ghFetch("/user");
+    state.githubUser = u;
+    sessionStorage.setItem("wevlo_gh_token", tok);
+    sessionStorage.setItem("wevlo_gh_user", JSON.stringify(u));
+    await window.loadGithubRepos();
+    document.getElementById("popupFreeAuthModal").classList.add("hidden");
+    updateAccountUI(); window.render();
+    window.showToast(`GitHub Connected: @${u.login}`, "success");
+  } catch (e) {
+    state.githubToken = null;
+    window.showToast("Token ভুল বা মেয়াদ শেষ! " + e.message, "error");
+  }
+};
+
 if (auth) onAuthStateChanged(auth, (u) => { state.user = u; updateAccountUI(); window.syncCloudUser?.(u); window.render(); });
 
 function updateAccountUI() {
+  injectPopupFreeAuthUI();
   const av = document.getElementById("userAvatar"), accName = document.getElementById("accName"), accEmail = document.getElementById("accEmail"), btnLogout = document.getElementById("btnLogoutMenu");
   if (state.user) {
     const label = state.user.displayName || state.profile.name || state.user.email || "User";
@@ -105,18 +273,39 @@ function updateAccountUI() {
   } else if (state.githubUser) {
     av.textContent = state.githubUser.login[0].toUpperCase(); accName.textContent = state.githubUser.login; accEmail.textContent = "GitHub Connected"; btnLogout.classList.remove("hidden");
   } else {
-    av.textContent = "W"; accName.textContent = "Not Signed In"; accEmail.textContent = "Sign in with Gmail or GitHub"; btnLogout.classList.add("hidden");
+    av.textContent = "W"; accName.textContent = "Not Signed In"; accEmail.textContent = "Sign in with Email, Gmail or GitHub"; btnLogout.classList.add("hidden");
   }
   document.getElementById("ghMenuLabel").textContent = state.githubToken ? `GitHub: @${state.githubUser?.login || "Connected"}` : "Connect GitHub Account";
 }
 updateAccountUI();
 
+let authPopupBusy = false;
 window.loginWithGoogle = async () => {
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); window.showToast("Gmail লগইন সফল!", "success"); document.getElementById("accountMenu").classList.add("hidden"); }
-  catch (e) { window.showToast(e.message, "error"); }
+  if (authPopupBusy) return;
+  authPopupBusy = true;
+  const p = new GoogleAuthProvider();
+  p.setCustomParameters({ prompt: "select_account" });
+  try {
+    await signInWithPopup(auth, p);
+    window.showToast("Gmail লগইন সফল!", "success");
+    document.getElementById("accountMenu").classList.add("hidden");
+  } catch (e) {
+    if (e.code === "auth/user-disabled") {
+      window.showToast("এই Gmail-টি Firebase Console → Users-এ Disabled! সেখান থেকে Enable করুন।", "error");
+    } else if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
+      window.showToast("মোবাইলে পপ-আপ ব্লক হয়েছে! Email/Password দিয়ে লগইন করুন।", "error");
+      window.openEmailAuthModal();
+    } else {
+      window.showToast(e.message, "error");
+    }
+  } finally {
+    authPopupBusy = false;
+  }
 };
 
 window.loginWithGithub = async () => {
+  if (authPopupBusy) return;
+  authPopupBusy = true;
   const p = new GithubAuthProvider(); p.addScope("repo"); p.addScope("workflow");
   try {
     const res = await signInWithPopup(auth, p);
@@ -127,7 +316,16 @@ window.loginWithGithub = async () => {
       await window.loadGithubRepos(); updateAccountUI(); window.render(); window.showToast("GitHub কানেক্ট হয়েছে!", "success");
     }
     document.getElementById("accountMenu").classList.add("hidden");
-  } catch (e) { window.showToast(e.code === "auth/popup-closed-by-user" ? "পপআপ বন্ধ হয়েছে! Chrome Pop-ups Allow করে আবার চেষ্টা করুন।" : e.message, "error"); }
+  } catch (e) {
+    if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
+      window.showToast("মোবাইলে GitHub পপ-আপ ব্লক হয়েছে! Token দিয়ে কানেক্ট করুন।", "error");
+      window.openGhTokenModal();
+    } else {
+      window.showToast(e.message, "error");
+    }
+  } finally {
+    authPopupBusy = false;
+  }
 };
 
 window.confirmLogout = () => openConfirmModal({
@@ -135,13 +333,14 @@ window.confirmLogout = () => openConfirmModal({
   onConfirm: async () => {
     try { if (auth) await signOut(auth); if (window.indexedDB) indexedDB.deleteDatabase("firebaseLocalStorageDb"); } catch {}
     state.user = null; state.plan = "Free"; state.githubToken = null; state.githubUser = null; state.githubRepos = []; state.ghIdeOpen = false;
-    sessionStorage.clear(); localStorage.removeItem("wevlo_profile"); state.profile.name = "";
+    state.selectedGhRepo = "";
+    sessionStorage.clear(); localStorage.removeItem("wevlo_profile"); localStorage.removeItem("wevlo_gh_session"); state.profile.name = "";
     document.getElementById("accountMenu").classList.add("hidden"); updateAccountUI(); window.render(); window.showToast("Signed out!", "info");
   }
 });
 
 // ======================================================
-// ৫. Sidebar & Navigation (With Admin Panel Link + Feature Badges)
+// ৫. Sidebar & Navigation
 // ======================================================
 const sidebarMenu = [
   { route: "#/", label: "Dashboard", icon: "home" },
@@ -164,7 +363,7 @@ const sidebarMenu = [
   { route: "#/privacy", label: "Privacy Policy", icon: "shield" },
   { route: "#/support", label: "Support", icon: "headphones" }
 ];
-const pageTitles = Object.fromEntries([...sidebarMenu.map((i) => [i.route, i.label]), ["#/settings", "Settings & Profile"], ["#/admin", "Admin Panel"]]);
+const pageTitles = Object.fromEntries(sidebarMenu.map((i) => [i.route, i.label]).concat([["#/settings", "Settings & Profile"]]));
 
 window.navigate = (r) => { state.route = r; window.location.hash = r; window.toggleDrawer(false); window.render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
 window.addEventListener("hashchange", () => { state.route = window.location.hash || "#/"; window.render(); });
@@ -173,10 +372,14 @@ window.toggleAccountMenu = () => document.getElementById("accountMenu").classLis
 
 function renderHeaderAndNav() {
   const adminBtn = isAdminUser(state)
-    ? `<button onclick="navigate('#/admin')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl mb-2 ${state.route === "#/admin" ? "btn-purple font-bold" : "bg-purple-50 text-purple-800 font-bold"}"><span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4"></i> Admin Panel</span><span class="pro-badge">ADMIN</span></button>`
+    ? `<button onclick="navigate('#/admin')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl mb-2 ${state.route === "#/admin" ? "btn-purple font-bold" : "bg-purple-50 text-purple-800 font-bold"}"><span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4"></i> Control Panel</span><span class="pro-badge">SYS</span></button>`
     : "";
 
-  document.getElementById("sidebarNav").innerHTML = adminBtn + sidebarMenu.map((item) => {
+  const resumeBtn = state.githubToken && state.selectedGhRepo
+    ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-purple-600/15 text-purple-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${state.selectedGhRepo.split("/")[1]}</span><span>→</span></button>`
+    : "";
+
+  document.getElementById("sidebarNav").innerHTML = adminBtn + resumeBtn + sidebarMenu.map((item) => {
     const mode = item.fkey ? (state.featureRules?.[item.fkey] || "free") : "free";
     const badge = mode === "pro" ? `<span class="pro-badge">PRO</span>` : mode === "off" ? `<span class="text-[9px] bg-rose-100 text-rose-600 px-1.5 rounded-full font-bold">OFF</span>` : "";
     return `<button onclick="navigate('${item.route}')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl transition ${state.route === item.route ? "bg-purple-50 text-purple-700 font-bold" : "text-muted hover:bg-purple-500/5"}"><span class="flex items-center gap-3"><i data-lucide="${item.icon}" class="w-4 h-4"></i><span>${item.label}</span></span>${badge}</button>`;
@@ -185,9 +388,10 @@ function renderHeaderAndNav() {
   document.querySelectorAll(".bnav-item").forEach((b) => b.classList.toggle("active", b.dataset.bnav === state.route));
   const subpages = ["#/build", "#/github-build", "#/subscription", "#/payments", "#/push", "#/lab", "#/files", "#/icons", "#/secure-converter", "#/docs", "#/privacy", "#/support", "#/admin"];
   const hl = document.getElementById("headerLeft");
+  const curTitle = state.route === "#/admin" && isAdminUser(state) ? "Control Center" : (pageTitles[state.route] || "Wevlo");
   hl.innerHTML = subpages.includes(state.route)
-    ? `<button onclick="navigate('#/')" class="w-9 h-9 rounded-full surface-card flex items-center justify-center"><i data-lucide="arrow-left" class="w-4 h-4"></i></button><span class="font-extrabold text-lg">${pageTitles[state.route]}</span>`
-    : `<button onclick="toggleDrawer(true)" class="lg:hidden p-2 -ml-2 rounded-xl"><i data-lucide="menu" class="w-5 h-5"></i></button><a href="#/" onclick="navigate('#/')" class="flex items-center gap-1 lg:hidden"><svg width="26" height="20" viewBox="0 0 36 28" fill="none"><path d="M3 5L10.5 22L18 9L25.5 22L33 5" stroke="url(#wGrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-lg font-extrabold">evlo</span></a><span class="hidden lg:inline-block font-bold text-base">${pageTitles[state.route] || "Wevlo"}</span>`;
+    ? `<button onclick="navigate('#/')" class="w-9 h-9 rounded-full surface-card flex items-center justify-center"><i data-lucide="arrow-left" class="w-4 h-4"></i></button><span class="font-extrabold text-lg">${curTitle}</span>`
+    : `<button onclick="toggleDrawer(true)" class="lg:hidden p-2 -ml-2 rounded-xl"><i data-lucide="menu" class="w-5 h-5"></i></button><a href="#/" onclick="navigate('#/'); secretAdminTap()" class="flex items-center gap-1 lg:hidden"><svg width="26" height="20" viewBox="0 0 36 28" fill="none"><path d="M3 5L10.5 22L18 9L25.5 22L33 5" stroke="url(#wGrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-lg font-extrabold">evlo</span></a><span class="hidden lg:inline-block font-bold text-base">${curTitle}</span>`;
 }
 
 window.openNewProjectModal = (type = "html") => { window.selectModalType(type); document.getElementById("modalProjName").value = ""; const m = document.getElementById("newProjectModal"); m.classList.remove("hidden"); m.classList.add("flex"); };
@@ -227,11 +431,11 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, lo
     const files = [
       { path: "settings.gradle", content: `pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}\ndependencyResolutionManagement{repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS);repositories{google();mavenCentral()}}\nrootProject.name="Wevlo"\ninclude ':app'\n` },
       { path: "build.gradle", content: `plugins{id 'com.android.application' version '8.5.2' apply false}\n` },
-      { path: "gradle.properties", content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n` },
+      { path: "gradle.properties", content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.nonTransitiveRClass=true\n` },
       { path: "app/build.gradle", content: `plugins{id 'com.android.application'}\nandroid{namespace '${pkgName}';compileSdk 34;defaultConfig{applicationId "${pkgName}";minSdk 24;targetSdk 34;versionCode 1;versionName "1.0"};compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}}\n` },
       { path: "app/src/main/AndroidManifest.xml", content: `<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><application android:label="${appName}" android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>` },
       { path: `app/src/main/java/${pkgPath}/MainActivity.java`, content: `package ${pkgName};\n${javaSource}` },
-      { path: ".github/workflows/wevlo-build.yml", content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with: {distribution: 'temurin', java-version: '17'}\n      - uses: gradle/actions/setup-gradle@v4\n        with: {gradle-version: '8.7'}\n      - run: gradle assembleDebug --no-daemon\n      - uses: softprops/action-gh-release@v2\n        with: {tag_name: "v1-\${{ github.run_number }}", files: "app/build/outputs/apk/debug/app-debug.apk"}\n` }
+      { path: ".github/workflows/wevlo-build.yml", content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - uses: softprops/action-gh-release@v2\n        with:\n          tag_name: "v1-\${{ github.run_number }}"\n          fail_on_unmatched_files: false\n          files: "app/build/outputs/apk/debug/app-debug.apk"\n` }
     ];
     for (const f of files) await ghFetch(`/repos/${owner}/${repoName}/contents/${f.path}`, { method: "PUT", body: JSON.stringify({ message: `Add ${f.path}`, content: toBase64(f.content), branch }) });
     logs.innerHTML += `<div>• Building on GitHub Actions...</div>`;
@@ -255,7 +459,7 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, lo
 // ======================================================
 function renderFeatureLocked(label, mode) {
   if (mode === "off") {
-    return `<div class="wevlo-card p-8 text-center space-y-3"><i data-lucide="slash" class="w-10 h-10 mx-auto text-rose-500"></i><h2 class="text-lg font-extrabold">${label} Temporarily Disabled</h2><p class="text-xs text-muted">এই ফিচারটি বর্তমানে Admin বন্ধ রেখেছেন।</p></div>`;
+    return `<div class="wevlo-card p-8 text-center space-y-3"><i data-lucide="slash" class="w-10 h-10 mx-auto text-rose-500"></i><h2 class="text-lg font-extrabold">${label} Temporarily Unavailable</h2><p class="text-xs text-muted">এই ফিচারটি বর্তমানে বন্ধ রয়েছে।</p></div>`;
   }
   return `<div class="wevlo-card p-8 text-center space-y-4"><span class="pro-badge">PRO FEATURE</span><h2 class="text-xl font-extrabold">${label} is for Pro Users</h2><p class="text-xs text-muted">এই ফিচারটি ব্যবহার করতে আপনার অ্যাকাউন্টটি Wevlo Pro-তে আপগ্রেড করুন।</p><button onclick="navigate('#/subscription')" class="btn-purple px-6 py-3 rounded-full text-xs font-bold">Upgrade to Wevlo Pro →</button></div>`;
 }
@@ -270,7 +474,9 @@ function renderDashboard() {
     ["python", "langPython", "🐍 Python", "Kivy Buildozer"]
   ];
   return `
-    ${isAdminUser(state) ? `<div class="wevlo-card p-4 bg-purple-600/10 border-purple-400 flex items-center justify-between"><span class="text-xs font-extrabold text-purple-700">🛡 Logged in as Super Admin</span><button onclick="navigate('#/admin')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Open Admin Panel →</button></div>` : ""}
+    ${isAdminUser(state) ? `<div class="wevlo-card p-4 bg-purple-600/10 border-purple-400 flex items-center justify-between"><span class="text-xs font-extrabold text-purple-700">🛡 Control Panel Active</span><button onclick="navigate('#/admin')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Open Control Panel →</button></div>` : ""}
+
+    ${state.githubToken && state.selectedGhRepo ? `<div class="wevlo-card p-4 border-purple-400/50 bg-purple-500/5 flex flex-wrap items-center justify-between gap-2"><span class="text-xs font-bold">⚡ Active App IDE: <b class="text-purple-700">${state.selectedGhRepo}</b></span><button onclick="resumeGithubIde()" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Resume IDE →</button></div>` : ""}
 
     <div class="hero-lavender rounded-[24px] p-5 flex items-start justify-between gap-3">
       <div>
@@ -358,17 +564,17 @@ function renderPreview() {
 
 function renderSettings() {
   const pr = state.profile;
-  return `<div class="wevlo-card p-5 space-y-4 text-xs"><h1 class="text-xl font-extrabold">Settings &amp; Profile</h1><input value="${pr.name}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full border border-soft rounded-xl px-3 py-2 bg-transparent"/><div class="flex flex-wrap gap-2.5"><button onclick="saveUserProfile()" class="btn-purple px-5 py-2 rounded-full font-bold">Save Profile</button><button onclick="loginWithGoogle()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect Gmail</button><button onclick="loginWithGithub()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect GitHub</button><button onclick="confirmLogout()" class="border border-rose-300 text-rose-600 px-4 py-2 rounded-full font-bold">Remove / Sign Out</button></div></div>`;
+  return `<div class="wevlo-card p-5 space-y-4 text-xs"><h1 class="text-xl font-extrabold">Settings &amp; Profile</h1><input value="${pr.name}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full border border-soft rounded-xl px-3 py-2 bg-transparent"/><div class="flex flex-wrap gap-2.5"><button onclick="saveUserProfile()" class="btn-purple px-5 py-2 rounded-full font-bold">Save Profile</button><button onclick="openEmailAuthModal()" class="border border-purple-400 text-purple-700 px-4 py-2 rounded-full font-bold">Email / Password Login</button><button onclick="openGhTokenModal()" class="border border-soft px-4 py-2 rounded-full font-bold">GitHub via Token</button><button onclick="loginWithGoogle()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect Gmail</button><button onclick="loginWithGithub()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect GitHub</button><button onclick="confirmLogout()" class="border border-rose-300 text-rose-600 px-4 py-2 rounded-full font-bold">Remove / Sign Out</button></div></div>`;
 }
 
 // ======================================================
-// ৮. Bindings & Router With Admin Feature Gate
+// ৮. Bindings & Router With Feature Gate
 // ======================================================
 const langKeyMap = { java: "langJava", kotlin: "langKotlin", flutter: "langFlutter", capacitor: "langCapacitor", python: "langPython" };
 window.openStudioLanguage = (lang) => {
   const acc = checkFeatureAccess(langKeyMap[lang] || "langJava", state);
   if (!acc.allowed) {
-    if (acc.mode === "off") return window.showToast("এই ল্যাঙ্গুয়েজটি বর্তমানে Admin বন্ধ রেখেছেন।", "error");
+    if (acc.mode === "off") return window.showToast("এই ল্যাঙ্গুয়েজটি বর্তমানে অনুপলব্ধ রয়েছে।", "error");
     window.showToast("এটি Pro ফিচার! আগে Wevlo Pro নিন।", "error");
     return window.navigate("#/subscription");
   }
@@ -420,9 +626,13 @@ const routeFeatureMap = {
 
 window.state = state;
 window.render = function render() {
+  if (state.route === "#/admin" && !isAdminUser(state)) {
+    state.route = "#/";
+    window.history.replaceState(null, "", "#/");
+  }
+
   renderHeaderAndNav();
 
-  // Check Admin Feature Control before opening restricted pages
   const gate = routeFeatureMap[state.route];
   const gateResult = gate ? checkFeatureAccess(gate[0], state) : { allowed: true };
 
@@ -436,7 +646,7 @@ window.render = function render() {
 
   if (!gateResult.allowed) {
     c.innerHTML = renderFeatureLocked(gate[1], gateResult.mode);
-  } else if (state.route === "#/admin") {
+  } else if (state.route === "#/admin" && isAdminUser(state)) {
     c.innerHTML = renderAdminPanel({ state, showToast: window.showToast, render: window.render });
   } else {
     const extraHtml = renderExtraPages({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, addActivity, openConfirmModal });
