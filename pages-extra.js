@@ -1,11 +1,11 @@
 export function renderExtraPages(ctx) {
-  const { state, saveProjects, navigate, showToast, render, addActivity, openConfirmModal } = ctx;
+  const { state, saveProjects, navigate, showToast, render, openConfirmModal } = ctx;
   const pCfg = state.paymentConfig || {
     bkashNumber: "01700000000",
     nagadNumber: "01700000000",
     proMonthlyPrice: 299,
     proYearlyPrice: 2499,
-    notice: "Send Money করে TrxID সাবমিট করুন।"
+    notice: "Send money and submit your TrxID for verification."
   };
 
   const docGuides = [
@@ -40,17 +40,23 @@ export function renderExtraPages(ctx) {
   ];
 
   window.openGuideDetail = (idx) => {
-    const g = docGuides[idx]; if (!g) return;
+    const g = docGuides[idx];
+    if (!g) return;
     document.getElementById("guideCatBadge").textContent = g.cat + (g.pro ? " • PRO" : "");
     document.getElementById("guideTitle").textContent = g.title;
     document.getElementById("guideBody").textContent = g.body;
-    document.getElementById("guideActionBtn").onclick = () => { document.getElementById("guideModal").classList.add("hidden"); navigate(g.route); };
-    const m = document.getElementById("guideModal"); m.classList.remove("hidden"); m.classList.add("flex");
+    document.getElementById("guideActionBtn").onclick = () => {
+      document.getElementById("guideModal").classList.add("hidden");
+      navigate(g.route);
+    };
+    const m = document.getElementById("guideModal");
+    m.classList.remove("hidden");
+    m.classList.add("flex");
   };
 
   window.submitDirectSubPayment = async () => {
     const trx = document.getElementById("subTrxInput")?.value.trim();
-    if (!trx) return showToast("Transaction ID (TrxID) লিখুন!", "error");
+    if (!trx) return showToast("Please enter Transaction ID (TrxID)!", "error");
     const isYear = state.subDuration === "yearly";
     const amt = isYear ? pCfg.proYearlyPrice : pCfg.proMonthlyPrice;
     const days = isYear ? 365 : 30;
@@ -62,7 +68,15 @@ export function renderExtraPages(ctx) {
       planDurationDays: days
     });
     if (ok) {
-      state.payments.unshift({ id: "SUB-" + Date.now(), title: `Wevlo Pro (${isYear ? "1 Year" : "30 Days"})`, amount: amt, method: state.subPayMethod || "bKash", trx, status: "Pending", date: new Date().toLocaleDateString() });
+      state.payments.unshift({
+        id: "SUB-" + Date.now(),
+        title: `Wevlo Pro (${isYear ? "1 Year" : "30 Days"})`,
+        amount: amt,
+        method: state.subPayMethod || "bKash",
+        trx,
+        status: "Pending",
+        date: new Date().toLocaleDateString()
+      });
       localStorage.setItem("wevlo_payments", JSON.stringify(state.payments));
       document.getElementById("subTrxInput").value = "";
       render();
@@ -70,19 +84,25 @@ export function renderExtraPages(ctx) {
   };
 
   window.runSecureConvert = () => {
-    const raw = document.getElementById("secInput").value, mode = document.getElementById("secMode").value;
-    if (!raw.trim()) return showToast("আগে HTML কোড পেস্ট করুন!", "error");
-    const out = mode === "base64"
-      ? `<!-- Protected by Wevlo -->\n<script>document.write(decodeURIComponent(escape(atob("${btoa(unescape(encodeURIComponent(raw)))}"))));<\/script>`
-      : `<div>${Array.from(raw).map((c) => "&#x" + c.charCodeAt(0).toString(16) + ";").join("")}</div>`;
-    state.secOutput = out; document.getElementById("secOutput").value = out;
+    const raw = document.getElementById("secInput").value;
+    const mode = document.getElementById("secMode").value;
+    if (!raw.trim()) return showToast("Please paste HTML code first!", "error");
+    const out =
+      mode === "base64"
+        ? `<!-- Protected by Wevlo -->\n<script>document.write(decodeURIComponent(escape(atob("${btoa(unescape(encodeURIComponent(raw)))}"))));<\/script>`
+        : `<div>${Array.from(raw).map((c) => "&#x" + c.charCodeAt(0).toString(16) + ";").join("")}</div>`;
+    state.secOutput = out;
+    document.getElementById("secOutput").value = out;
     showToast("Converted!", "success");
   };
 
   window.applySecuredToProject = () => {
-    const out = document.getElementById("secOutput").value, proj = state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0];
-    if (!proj || !out) return showToast("সক্রিয় প্রজেক্ট বা আউটপুট নেই!", "error");
-    proj.html = out; saveProjects(); showToast(`Applied to "${proj.name}"!`, "success");
+    const out = document.getElementById("secOutput").value;
+    const proj = state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0];
+    if (!proj || !out) return showToast("No active project or converted output found!", "error");
+    proj.html = out;
+    saveProjects();
+    showToast(`Applied to "${proj.name}"!`, "success");
   };
 
   window.cloneLabProject = (idx) => {
@@ -92,38 +112,69 @@ export function renderExtraPages(ctx) {
       { name: "Business Bio Card", html: `<div class="card"><h1>Studio Digital</h1><p>Web &amp; Mobile Apps</p></div>`, css: `body{background:#ece8ff;font-family:sans-serif;padding:30px}.card{background:#fff;padding:24px;border-radius:20px;text-align:center}`, js: `` }
     ];
     const it = items[idx];
-    state.projects.unshift({ id: "proj_" + Date.now(), name: it.name, type: "html", html: it.html, css: it.css, js: it.js, updatedAt: new Date().toLocaleDateString() });
-    state.activeProjectId = state.projects[0].id; saveProjects(); navigate("#/editor");
+    state.projects.unshift({
+      id: "proj_" + Date.now(),
+      name: it.name,
+      type: "html",
+      html: it.html,
+      css: it.css,
+      js: it.js,
+      updatedAt: new Date().toLocaleDateString()
+    });
+    state.activeProjectId = state.projects[0].id;
+    saveProjects();
+    navigate("#/editor");
   };
 
   window.uploadFileManagerItem = (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    if (file.size > 1024 * 1024) return showToast("1MB-এর কম ফাইল দিন।", "error");
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) return showToast("Please select a file smaller than 1MB.", "error");
     const r = new FileReader();
     r.onload = () => {
-      state.files.unshift({ id: "f_" + Date.now(), name: file.name, size: (file.size / 1024).toFixed(1) + " KB", type: file.type || "file", dataUrl: r.result });
-      localStorage.setItem("wevlo_files", JSON.stringify(state.files)); render();
+      state.files.unshift({
+        id: "f_" + Date.now(),
+        name: file.name,
+        size: (file.size / 1024).toFixed(1) + " KB",
+        type: file.type || "file",
+        dataUrl: r.result
+      });
+      localStorage.setItem("wevlo_files", JSON.stringify(state.files));
+      render();
     };
     r.readAsDataURL(file);
   };
 
-  window.deleteFileItem = (id) => openConfirmModal({
-    title: "Delete File?", message: "Remove this file?",
-    onConfirm: () => { state.files = state.files.filter((f) => f.id !== id); localStorage.setItem("wevlo_files", JSON.stringify(state.files)); render(); }
-  });
+  window.deleteFileItem = (id) =>
+    openConfirmModal({
+      title: "Delete File?",
+      message: "Remove this file?",
+      onConfirm: () => {
+        state.files = state.files.filter((f) => f.id !== id);
+        localStorage.setItem("wevlo_files", JSON.stringify(state.files));
+        render();
+      }
+    });
 
-  window.copyLucideIconSvg = (name) => { navigator.clipboard?.writeText(`<i data-lucide="${name}"></i>`); showToast(`Copied ${name}!`, "success"); };
+  window.copyLucideIconSvg = (name) => {
+    navigator.clipboard?.writeText(`<i data-lucide="${name}"></i>`);
+    showToast(`Copied ${name}!`, "success");
+  };
   window.sendPushDemo = () => {
-    const t = document.getElementById("pushTitle").value.trim(), b = document.getElementById("pushBody").value.trim();
-    if (!t || !b) return showToast("Title ও Message লিখুন!", "error");
+    const t = document.getElementById("pushTitle").value.trim();
+    const b = document.getElementById("pushBody").value.trim();
+    if (!t || !b) return showToast("Please enter both Title and Message!", "error");
     state.pushLogs.unshift({ title: t, body: b, time: new Date().toLocaleTimeString() });
-    localStorage.setItem("wevlo_push_logs", JSON.stringify(state.pushLogs)); render();
+    localStorage.setItem("wevlo_push_logs", JSON.stringify(state.pushLogs));
+    render();
   };
   window.submitSupportTicket = () => {
-    const s = document.getElementById("supSubject").value.trim(), m = document.getElementById("supMsg").value.trim();
-    if (!s || !m) return showToast("Subject ও Message লিখুন!", "error");
-    document.getElementById("supSubject").value = ""; document.getElementById("supMsg").value = "";
-    showToast("সাপোর্ট মেসেজ পাঠানো হয়েছে!", "success");
+    const s = document.getElementById("supSubject").value.trim();
+    const m = document.getElementById("supMsg").value.trim();
+    if (!s || !m) return showToast("Please enter both Subject and Message!", "error");
+    document.getElementById("supSubject").value = "";
+    document.getElementById("supMsg").value = "";
+    showToast("Support message sent!", "success");
   };
 
   switch (state.route) {
@@ -204,7 +255,8 @@ export function renderExtraPages(ctx) {
     }
 
     case "#/docs": {
-      const q = (state.docSearch || "").toLowerCase(), cat = state.docCat || "All";
+      const q = (state.docSearch || "").toLowerCase();
+      const cat = state.docCat || "All";
       const cats = ["All", "Getting started", "Build apps", "GitHub Build", "Account & payments", "Tools"];
       const filtered = docGuides.map((g, i) => ({ ...g, idx: i })).filter((g) => (cat === "All" || g.cat === cat) && (g.title.toLowerCase().includes(q) || g.desc.toLowerCase().includes(q)));
       return `<div class="hero-lavender rounded-[24px] p-5 space-y-3"><h1 class="text-xl font-extrabold">Help &amp; Documentation</h1><input value="${state.docSearch || ""}" oninput="state.docSearch=this.value;render()" placeholder="Search guides..." class="w-full bg-white text-slate-900 rounded-full px-4 py-2 text-xs"/><div class="flex flex-wrap gap-1.5">${cats.map((c) => `<button onclick="state.docCat='${c}';render()" class="px-3 py-1 rounded-full text-[11px] font-bold ${cat === c ? "btn-purple" : "bg-white text-slate-700"}">${c}</button>`).join("")}</div></div><div class="wevlo-card p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">${filtered.map((g) => `<button onclick="openGuideDetail(${g.idx})" class="text-left p-3.5 rounded-2xl border border-soft"><p class="font-bold text-xs">${g.title} ${g.pro ? '<span class="pro-badge">PRO</span>' : ""}</p><p class="text-[11px] text-muted mt-1">${g.desc}</p></button>`).join("")}</div><div class="wevlo-card p-5 space-y-2">${faqs.map(([qT, a]) => `<details class="p-3 rounded-2xl border border-soft text-xs"><summary class="font-bold cursor-pointer">${qT}</summary><p class="text-muted mt-2">${a}</p></details>`).join("")}</div><div class="wevlo-card p-5 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">${glossary.map(([t, d]) => `<div class="p-2.5 rounded-xl border border-soft"><b>${t}:</b> ${d}</div>`).join("")}</div>`;
