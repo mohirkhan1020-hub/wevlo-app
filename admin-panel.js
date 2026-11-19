@@ -15,14 +15,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ======================================================
-// ১. Admin Security & Password Configuration
+// ১. Security & Password Configuration
 // ======================================================
 export const ADMIN_EMAILS = [
   "mohirkhan01763@gmail.com",
   "mohirkhan1020@gmail.com"
 ];
 
-// ডিফল্ট ব্যাকআপ পিন
 export const DEFAULT_MASTER_PIN = "1020";
 
 export function getActiveAdminPin(state) {
@@ -34,14 +33,11 @@ export function getActiveAdminPin(state) {
 }
 
 export function isAdminUser(state) {
-  // ১. সেশনে অ্যাডমিন আনলক করা থাকলে
   if (sessionStorage.getItem("wevlo_admin_unlocked") === "true") return true;
 
-  // ২. ইমেইল ম্যাচ করলে
   const email = (state.user?.email || "").toLowerCase();
   if (email && ADMIN_EMAILS.map((e) => e.toLowerCase()).includes(email)) return true;
 
-  // ৩. ফায়ারবেস ডেটাবেসে role == "admin" থাকলে
   if (state.userRole === "admin") return true;
 
   return false;
@@ -85,7 +81,7 @@ export const DEFAULT_PAYMENT_CONFIG = {
   nagadNumber: "01700000000",
   proMonthlyPrice: 299,
   proYearlyPrice: 2499,
-  notice: "Send Money করে TrxID সাবমিট করুন। Admin যাচাই করে সাথে সাথে অ্যাক্টিভ করবে।"
+  notice: "Send Money করে TrxID সাবমিট করুন। যাচাই করে সাথে সাথে অ্যাক্টিভ করা হবে।"
 };
 
 export function checkFeatureAccess(featureKey, state) {
@@ -114,7 +110,6 @@ export function initCloudFirestore(fbApp, ctx) {
   state.adminUsers = [];
   state.adminPayments = [];
 
-  // Live Feature Controls
   onSnapshot(doc(db, "config", "features"), (snap) => {
     if (snap.exists()) {
       state.featureRules = { ...DEFAULT_FEATURE_RULES, ...snap.data() };
@@ -122,7 +117,6 @@ export function initCloudFirestore(fbApp, ctx) {
     }
   });
 
-  // Live Payment Settings
   onSnapshot(doc(db, "config", "payments"), (snap) => {
     if (snap.exists()) {
       state.paymentConfig = { ...DEFAULT_PAYMENT_CONFIG, ...snap.data() };
@@ -130,7 +124,6 @@ export function initCloudFirestore(fbApp, ctx) {
     }
   });
 
-  // Live Custom Admin Password / PIN from Firestore
   onSnapshot(doc(db, "config", "security"), (snap) => {
     if (snap.exists() && snap.data().adminPin) {
       state.customAdminPin = snap.data().adminPin;
@@ -193,7 +186,7 @@ export function initCloudFirestore(fbApp, ctx) {
         createdAt: serverTimestamp(),
         dateStr: new Date().toLocaleDateString()
       });
-      showToast("পেমেন্ট রিকোয়েস্ট পাঠানো হয়েছে! Admin যাচাই করে অ্যাপ্রুভ করবে।", "success");
+      showToast("পেমেন্ট রিকোয়েস্ট পাঠানো হয়েছে! যাচাই করে দ্রুত অ্যাপ্রুভ করা হবে।", "success");
       return true;
     } catch (e) {
       showToast("Payment Error: " + e.message, "error");
@@ -249,44 +242,15 @@ async function loadAdminData(ctx) {
 }
 
 // ======================================================
-// ৪. Admin Panel UI (#/admin)
+// ৪. Control Panel UI (#/admin — Hidden From Normal Users)
 // ======================================================
 export function renderAdminPanel(ctx) {
   const { state, showToast, render } = ctx;
 
-  // লক স্ক্রিন: মাস্টার পিন / পাসওয়ার্ড দিয়ে আনলক করার ফর্ম
   if (!isAdminUser(state)) {
-    window.unlockAdminWithPin = () => {
-      const pin = document.getElementById("adminPinInput")?.value.trim();
-      const currentPin = getActiveAdminPin(state);
-      if (pin === currentPin || pin === DEFAULT_MASTER_PIN) {
-        sessionStorage.setItem("wevlo_admin_unlocked", "true");
-        showToast("Super Admin Unlocked!", "success");
-        loadAdminData(ctx);
-        render();
-      } else {
-        showToast("ভুল Admin Password! সঠিক কোড দিন।", "error");
-      }
-    };
-
-    return `
-      <div class="wevlo-card p-6 sm:p-8 max-w-md mx-auto text-center space-y-4">
-        <div class="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
-          <i data-lucide="shield-alert" class="w-8 h-8"></i>
-        </div>
-        <h2 class="text-xl font-extrabold text-slate-900">Admin Security Check</h2>
-        <p class="text-xs text-muted">আপনার Admin Password / PIN দিয়ে ড্যাশবোর্ড আনলক করুন:</p>
-
-        <div class="space-y-3 pt-2">
-          <input id="adminPinInput" type="password" placeholder="Enter Admin Password (Default: 1020)" class="w-full text-center tracking-widest text-base font-bold border-2 border-purple-500/50 rounded-2xl px-4 py-3 bg-transparent focus:outline-none focus:border-purple-600" />
-          <button onclick="unlockAdminWithPin()" class="w-full btn-purple py-3 rounded-full text-sm font-bold">
-            🔓 Unlock Admin Panel
-          </button>
-        </div>
-      </div>`;
+    return "";
   }
 
-  // আনলক হওয়ার পর পূর্ণাঙ্গ ড্যাশবোর্ড
   if (!state.adminTab) state.adminTab = "payments";
   if (!state.adminUserSearch) state.adminUserSearch = "";
   const payments = state.adminPayments || [];
@@ -300,8 +264,8 @@ export function renderAdminPanel(ctx) {
 
   window.adminLockSession = () => {
     sessionStorage.removeItem("wevlo_admin_unlocked");
-    showToast("Admin session locked", "info");
-    render();
+    showToast("Session locked", "info");
+    window.navigate("#/");
   };
 
   window.adminApprovePayment = async (payId) => {
@@ -383,7 +347,6 @@ export function renderAdminPanel(ctx) {
     } catch (e) { showToast(e.message, "error"); }
   };
 
-  // ইন-অ্যাপ পাসওয়ার্ড বদলানোর হ্যান্ডলার
   window.adminChangePasswordAction = async () => {
     const newPass = document.getElementById("admNewPassInput")?.value.trim();
     if (!newPass || newPass.length < 4) {
@@ -396,7 +359,7 @@ export function renderAdminPanel(ctx) {
       await setDoc(doc(db, "config", "security"), { adminPin: newPass }, { merge: true }).catch(() => {});
     }
     document.getElementById("admNewPassInput").value = "";
-    showToast(`Admin Password সফলভাবে আপডেট হয়েছে! (নতুন পাসওয়ার্ড: ${newPass})`, "success");
+    showToast(`Password সফলভাবে আপডেট হয়েছে! (${newPass})`, "success");
     render();
   };
 
@@ -405,8 +368,8 @@ export function renderAdminPanel(ctx) {
   return `
     <div class="hero-lavender rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <span class="pro-badge">SUPER ADMIN</span>
-        <h1 class="text-2xl font-extrabold text-slate-900 mt-1">Admin <span class="text-purple-700">Control Center</span></h1>
+        <span class="pro-badge">SUPER CONTROL</span>
+        <h1 class="text-2xl font-extrabold text-slate-900 mt-1">Control <span class="text-purple-700">Center</span></h1>
         <p class="text-xs text-slate-600">Approve payments, manage users, and control Free/Pro features live.</p>
       </div>
       <div class="flex items-center gap-2">
@@ -415,14 +378,12 @@ export function renderAdminPanel(ctx) {
       </div>
     </div>
 
-    <!-- Stats Row -->
     <div class="grid grid-cols-3 gap-3 text-xs">
       <div class="wevlo-card p-4"><b>Pending Payments</b><p class="text-xl font-extrabold text-amber-500">${pendingCount}</p></div>
       <div class="wevlo-card p-4"><b>Total Users</b><p class="text-xl font-extrabold">${(state.adminUsers || []).length}</p></div>
       <div class="wevlo-card p-4"><b>Pro Users</b><p class="text-xl font-extrabold text-purple-600">${(state.adminUsers || []).filter((u) => u.plan === "Pro").length}</p></div>
     </div>
 
-    <!-- Admin Sub-Tabs -->
     <div class="flex flex-wrap gap-2">
       ${[
         ["payments", `💳 Payments (${pendingCount})`],
@@ -432,7 +393,6 @@ export function renderAdminPanel(ctx) {
       ].map(([id, lbl]) => `<button onclick="state.adminTab='${id}'; render()" class="px-4 py-2 rounded-full text-xs font-bold ${state.adminTab === id ? "btn-purple" : "wevlo-card"}">${lbl}</button>`).join("")}
     </div>
 
-    <!-- TAB 1: Payments -->
     ${
       state.adminTab === "payments"
         ? `<div class="wevlo-card p-5 space-y-3 text-xs">
@@ -464,7 +424,6 @@ export function renderAdminPanel(ctx) {
         : ""
     }
 
-    <!-- TAB 2: Users & Pro Activation -->
     ${
       state.adminTab === "users"
         ? `<div class="wevlo-card p-5 space-y-3 text-xs">
@@ -495,7 +454,6 @@ export function renderAdminPanel(ctx) {
         : ""
     }
 
-    <!-- TAB 3: Feature Controls -->
     ${
       state.adminTab === "features"
         ? `<div class="wevlo-card p-5 space-y-4 text-xs">
@@ -533,7 +491,6 @@ export function renderAdminPanel(ctx) {
         : ""
     }
 
-    <!-- TAB 4: Payment Settings & Admin Password Changer -->
     ${
       state.adminTab === "settings"
         ? `<div class="wevlo-card p-5 space-y-5 text-xs">
@@ -550,14 +507,13 @@ export function renderAdminPanel(ctx) {
             <div><label class="font-bold text-muted">Checkout Notice</label><input id="admPayNotice" value="${pCfg.notice}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
             <button onclick="adminSavePaymentConfig()" class="btn-purple px-6 py-2.5 rounded-full font-bold">Save Payment Settings</button>
 
-            <!-- ইন-অ্যাপ অ্যাডমিন পাসওয়ার্ড পরিবর্তন বক্স -->
             <div class="pt-4 border-t border-soft space-y-3">
               <div>
-                <h3 class="font-extrabold text-base flex items-center gap-2 text-slate-900"><i data-lucide="key-round" class="w-4 h-4 text-purple-600"></i> Change Admin Password / PIN</h3>
+                <h3 class="font-extrabold text-base flex items-center gap-2 text-slate-900"><i data-lucide="key-round" class="w-4 h-4 text-purple-600"></i> Change Access Password / PIN</h3>
                 <p class="text-muted">বর্তমান সক্রিয় পাসওয়ার্ড/পিন: <b class="text-purple-600">${currentAdminPass}</b></p>
               </div>
               <div class="flex flex-wrap gap-2">
-                <input id="admNewPassInput" type="text" placeholder="Enter New Admin Password..." class="flex-1 min-w-[200px] border-2 border-purple-500/50 rounded-xl px-4 py-2.5 bg-transparent font-bold focus:outline-none focus:border-purple-600" />
+                <input id="admNewPassInput" type="text" placeholder="Enter New Password..." class="flex-1 min-w-[200px] border-2 border-purple-500/50 rounded-xl px-4 py-2.5 bg-transparent font-bold focus:outline-none focus:border-purple-600" />
                 <button onclick="adminChangePasswordAction()" class="btn-purple px-5 py-2.5 rounded-xl font-bold">Update Password</button>
               </div>
             </div>
