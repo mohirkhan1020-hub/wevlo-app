@@ -463,14 +463,29 @@ data class AppItem(
 
 android {
     namespace = "com.wevlo.flutterapp"
-    compileSdk = 34
+    compileSdk = flutter.compileSdkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
 
     defaultConfig {
         applicationId = "com.wevlo.flutterapp"
-        minSdk = 21
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
         versionCode = 1
         versionName = "1.0"
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 }
 
@@ -803,7 +818,6 @@ log_level = 2`,
   }
 };
 
-// Core build-critical files used for error severity vs optional structure warnings
 const CORE_REQUIRED_FILES = {
   java: ["settings.gradle", "build.gradle", "gradle.properties", "app/build.gradle", "app/src/main/AndroidManifest.xml"],
   kotlin: ["settings.gradle", "build.gradle", "gradle.properties", "app/build.gradle", "app/src/main/AndroidManifest.xml"],
@@ -863,6 +877,9 @@ jobs:
             if [ -f ".wevlo_bak/pubspec.yaml" ]; then cp .wevlo_bak/pubspec.yaml pubspec.yaml; fi
             if [ -f ".wevlo_bak/AndroidManifest.xml" ]; then cp .wevlo_bak/AndroidManifest.xml android/app/src/main/AndroidManifest.xml; fi
             rm -rf .wevlo_bak
+          fi
+          if [ -f "android/app/build.gradle" ] && ! grep -q "jvmTarget" android/app/build.gradle; then
+            printf '\\nandroid {\\n    compileOptions {\\n        sourceCompatibility = JavaVersion.VERSION_17\\n        targetCompatibility = JavaVersion.VERSION_17\\n    }\\n    kotlinOptions {\\n        jvmTarget = "17"\\n    }\\n}\\n' >> android/app/build.gradle
           fi
           flutter pub get 2>&1 | tee build-output.log
           ${flCmd} 2>&1 | tee -a build-output.log
@@ -1110,6 +1127,16 @@ export function lintCodeLines(path, content, branch = "main", framework = "java"
       message: "build.gradle contains allprojects { repositories }, which conflicts with FAIL_ON_PROJECT_REPOS in settings.gradle.",
       fixPath: "build.gradle",
       fixContent: DEFAULT_ANDROID_TEMPLATES["build.gradle"]
+    });
+  }
+  if (framework === "flutter" && path === "android/app/build.gradle" && !content.includes("jvmTarget")) {
+    issues.push({
+      severity: "error",
+      file: path,
+      line: 1,
+      message: "Flutter android/app/build.gradle is missing Java 17 / Kotlin jvmTarget compatibility.",
+      fixPath: "android/app/build.gradle",
+      fixContent: FRAMEWORK_STARTERS.flutter["android/app/build.gradle"]
     });
   }
   return issues;
