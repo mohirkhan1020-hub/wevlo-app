@@ -1,5 +1,5 @@
 // ======================================================
-// AIDE Advanced Engine (Java, Kotlin, Dart/Flutter, Python, JS, XML)
+// AIDE Advanced Engine (Java, Kotlin, Dart/Flutter, Python, JS, XML, YAML)
 // ======================================================
 
 let cmLoadingPromise = null;
@@ -53,7 +53,8 @@ const HINTS_BY_TYPE = {
   kt: ["override fun onCreate(savedInstanceState: Bundle?)", "setContentView(R.layout.activity_main)", "Toast.makeText(this, \"\", Toast.LENGTH_SHORT).show()", "val layout = LinearLayout(this)", "Button(this).apply { }"],
   dart: ["StatelessWidget", "StatefulWidget", "Scaffold(", "AppBar(title: const Text(''))", "Center(child: )", "ElevatedButton(onPressed: () {}, child: const Text(''))", "setState(() {})", "Column(children: [])"],
   py: ["from kivy.app import App", "from kivy.uix.button import Button", "from kivy.uix.label import Label", "from kivy.uix.boxlayout import BoxLayout", "def build(self):"],
-  xml: ["android:layout_width=\"match_parent\"", "android:layout_height=\"wrap_content\"", "android:orientation=\"vertical\"", "android:text=\"\"", "android:background=\"#6D28D9\"", "<TextView", "<Button", "<EditText"]
+  xml: ["android:layout_width=\"match_parent\"", "android:layout_height=\"wrap_content\"", "android:orientation=\"vertical\"", "android:text=\"\"", "android:background=\"#6D28D9\"", "<TextView", "<Button", "<EditText"],
+  yml: ["name: Build", "on:", "  workflow_dispatch:", "permissions:", "  contents: write", "jobs:", "  build:", "    runs-on: ubuntu-latest", "    steps:", "      - uses: actions/checkout@v4"]
 };
 
 export async function mountCodeMirror({ hostId, value, filePath, errorLines = [], onChange, onCursor }) {
@@ -84,16 +85,23 @@ export async function mountCodeMirror({ hostId, value, filePath, errorLines = []
     ? "text/javascript"
     : "htmlmixed";
 
+  const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+
   host.innerHTML = "";
   const cm = CM(host, {
     value: value || "",
     mode,
     theme: "dracula",
     lineNumbers: true,
+    inputStyle: isTouch ? "contenteditable" : "textarea",
+    spellcheck: false,
+    autocorrect: false,
+    autocapitalize: false,
     autoCloseBrackets: true,
     matchBrackets: true,
-    tabSize: 4,
-    indentUnit: 4,
+    lineWrapping: false,
+    tabSize: 2,
+    indentUnit: 2,
     extraKeys: { "Ctrl-Space": (editor) => showAndroidHints(editor, filePath) }
   });
 
@@ -108,8 +116,46 @@ export async function mountCodeMirror({ hostId, value, filePath, errorLines = []
     if (ln > 0 && ln <= cm.lineCount()) cm.addLineClass(ln - 1, "background", "bg-rose-500/20");
   });
 
+  setTimeout(() => cm.refresh(), 50);
   window.__wevloCM = cm;
   return cm;
+}
+
+export async function runEditorToolbarAction(action, showToast) {
+  const cm = window.__wevloCM;
+  if (!cm) return;
+  if (action === "all") {
+    cm.execCommand("selectAll");
+    cm.focus();
+  } else if (action === "clear") {
+    cm.setValue("");
+    cm.focus();
+    showToast?.("সব কোড Clear করা হয়েছে!", "info");
+  } else if (action === "copy") {
+    const txt = cm.getSelection() || cm.getValue();
+    try {
+      await navigator.clipboard.writeText(txt);
+      showToast?.("কোড কপি হয়েছে!", "success");
+    } catch {
+      showToast?.("Clipboard permission নেই!", "error");
+    }
+  } else if (action === "paste") {
+    try {
+      const txt = await navigator.clipboard.readText();
+      if (!txt) return showToast?.("Clipboard খালি!", "error");
+      cm.replaceSelection(txt);
+      cm.focus();
+      showToast?.("কোড পেস্ট হয়েছে!", "success");
+    } catch {
+      showToast?.("ব্রাউজার Clipboard allow না করলে কীবোর্ড দিয়ে Paste করুন।", "error");
+    }
+  } else if (action === "undo") {
+    cm.undo();
+    cm.focus();
+  } else if (action === "redo") {
+    cm.redo();
+    cm.focus();
+  }
 }
 
 export function showAndroidHints(cm, filePath) {
@@ -117,7 +163,7 @@ export function showAndroidHints(cm, filePath) {
   if (!CM || !cm) return;
   const cur = cm.getCursor(), token = cm.getTokenAt(cur), word = token.string.trim();
   const ext = filePath.split(".").pop();
-  const pool = HINTS_BY_TYPE[ext] || HINTS_BY_TYPE.java;
+  const pool = HINTS_BY_TYPE[ext === "yaml" ? "yml" : ext] || HINTS_BY_TYPE.java;
   const matches = word ? pool.filter((h) => h.toLowerCase().includes(word.toLowerCase())) : pool;
   CM.showHint(cm, () => ({ list: matches.length ? matches : pool, from: CM.Pos(cur.line, token.start), to: CM.Pos(cur.line, token.end) }), { completeSingle: false });
 }
