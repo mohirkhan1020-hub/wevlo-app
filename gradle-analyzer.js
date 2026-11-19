@@ -189,30 +189,46 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-      - name: Build Flutter
+      - name: Setup Android & Build Flutter
         run: |
           set -o pipefail
-          flutter pub get
-          ${flCmd} 2>&1 | tee build-output.log
-      - uses: softprops/action-gh-release@v2
+          if [ ! -d "android" ]; then
+            cp lib/main.dart lib/main.dart.bak
+            cp pubspec.yaml pubspec.yaml.bak
+            flutter create --platforms=android .
+            mv lib/main.dart.bak lib/main.dart
+            mv pubspec.yaml.bak pubspec.yaml
+          fi
+          flutter pub get 2>&1 | tee build-output.log
+          ${flCmd} 2>&1 | tee -a build-output.log
+      - name: Publish Release
         if: success()
-        with:
-          tag_name: v${versionName}-\${{ github.run_number }}
-          fail_on_unmatched_files: false
-          files: |
-            build/app/outputs/flutter-apk/*.apk
-            build/app/outputs/bundle/release/*.aab
-      - uses: softprops/action-gh-release@v2
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          shopt -s nullglob
+          FILES=(build/app/outputs/flutter-apk/*.apk build/app/outputs/bundle/release/*.aab)
+          if [ \${#FILES[@]} -gt 0 ]; then
+            gh release create "v${versionName}-\${{ github.run_number }}" "\${FILES[@]}" --title "v${versionName}-\${{ github.run_number }}" --notes "Built with Wevlo"
+          fi
+      - name: Upload Failure Log
         if: failure()
-        with:
-          tag_name: log-latest
-          fail_on_unmatched_files: false
-          files: build-output.log
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          if [ -f "build-output.log" ]; then
+            gh release delete log-latest -y || true
+            gh release create log-latest build-output.log --prerelease --title "Latest Build Log" --notes "Build log" || true
+          fi
 `;
   }
 
@@ -229,37 +245,42 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
-      - uses: actions/setup-java@v4
+          node-version: '22'
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
       - name: Build Capacitor Android
         run: |
           set -o pipefail
-          npm install
-          if [ ! -d "android" ]; then npx cap add android; fi
-          npx cap sync android
+          npm install 2>&1 | tee build-output.log
+          if [ ! -d "android" ]; then npx cap add android 2>&1 | tee -a build-output.log; fi
+          npx cap sync android 2>&1 | tee -a build-output.log
           cd android
           chmod +x gradlew
-          ./gradlew ${capTask} --no-daemon --stacktrace 2>&1 | tee ../build-output.log
-      - uses: softprops/action-gh-release@v2
+          ./gradlew ${capTask} --no-daemon --stacktrace 2>&1 | tee -a ../build-output.log
+      - name: Publish Release
         if: success()
-        with:
-          tag_name: v${versionName}-\${{ github.run_number }}
-          fail_on_unmatched_files: false
-          files: |
-            android/app/build/outputs/apk/**/*.apk
-            android/app/build/outputs/bundle/**/*.aab
-      - uses: softprops/action-gh-release@v2
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          shopt -s nullglob globstar
+          FILES=(android/app/build/outputs/apk/**/*.apk android/app/build/outputs/bundle/**/*.aab)
+          if [ \${#FILES[@]} -gt 0 ]; then
+            gh release create "v${versionName}-\${{ github.run_number }}" "\${FILES[@]}" --title "v${versionName}-\${{ github.run_number }}" --notes "Built with Wevlo"
+          fi
+      - name: Upload Failure Log
         if: failure()
-        with:
-          tag_name: log-latest
-          fail_on_unmatched_files: false
-          files: build-output.log
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          if [ -f "build-output.log" ]; then
+            gh release delete log-latest -y || true
+            gh release create log-latest build-output.log --prerelease --title "Latest Build Log" --notes "Build log" || true
+          fi
 `;
   }
 
@@ -275,17 +296,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ArtemSBulgakov/buildozer-action@v1
         with:
           command: "buildozer android debug"
           buildozer_version: "stable"
-      - uses: softprops/action-gh-release@v2
+      - name: Publish Release
         if: success()
-        with:
-          tag_name: v${versionName}-\${{ github.run_number }}
-          fail_on_unmatched_files: false
-          files: "bin/*.apk"
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          shopt -s nullglob
+          FILES=(bin/*.apk)
+          if [ \${#FILES[@]} -gt 0 ]; then
+            gh release create "v${versionName}-\${{ github.run_number }}" "\${FILES[@]}" --title "v${versionName}-\${{ github.run_number }}" --notes "Built with Wevlo"
+          fi
 `;
   }
 
@@ -301,14 +326,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
+          cache-provider: basic
       - name: Run Gradle Build
         run: |
           set -o pipefail
@@ -318,20 +344,25 @@ jobs:
           else
             gradle ${cmd} --no-daemon --stacktrace 2>&1 | tee build-output.log
           fi
-      - uses: softprops/action-gh-release@v2
+      - name: Publish Release
         if: success()
-        with:
-          tag_name: v${versionName}-\${{ github.run_number }}
-          fail_on_unmatched_files: false
-          files: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/bundle/**/*.aab
-      - uses: softprops/action-gh-release@v2
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          shopt -s nullglob globstar
+          FILES=(app/build/outputs/apk/**/*.apk app/build/outputs/bundle/**/*.aab)
+          if [ \${#FILES[@]} -gt 0 ]; then
+            gh release create "v${versionName}-\${{ github.run_number }}" "\${FILES[@]}" --title "v${versionName}-\${{ github.run_number }}" --notes "Built with Wevlo"
+          fi
+      - name: Upload Failure Log
         if: failure()
-        with:
-          tag_name: log-latest
-          fail_on_unmatched_files: false
-          files: build-output.log
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          if [ -f "build-output.log" ]; then
+            gh release delete log-latest -y || true
+            gh release create log-latest build-output.log --prerelease --title "Latest Build Log" --notes "Build log" || true
+          fi
 `;
 }
 
