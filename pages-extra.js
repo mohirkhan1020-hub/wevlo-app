@@ -17,7 +17,7 @@ export function renderExtraPages(ctx) {
     { cat: "Tools", route: "#/preview", title: "Preview", desc: "Test your project on phone, tablet and desktop sizes.", body: "Switch between Phone, Tablet, and Desktop viewports." },
     { cat: "Build apps", route: "#/build", title: "Build APK", desc: "Package a project as an installable Android app.", body: "Configure permissions, WebView settings, and PRO modules before building." },
     { cat: "GitHub Build", route: "#/github-build", title: "GitHub Build (Multi-Language IDE)", desc: "Build Java, Kotlin, Flutter, Capacitor JS & Python apps.", body: "Create or open a GitHub repo, write code with CodeMirror & Visual XML Designer, and compile APK/AAB." },
-    { cat: "Account & payments", route: "#/wallet", title: "Wallet", desc: "Add money once and pay instantly for templates and plans.", body: "Send money via bKash/Nagad and submit TrxID for admin verification." },
+    { cat: "Account & payments", route: "#/wallet", title: "Wallet", desc: "Add money once and pay instantly for templates and plans.", body: "Send money via bKash/Nagad and submit TrxID for verification." },
     { cat: "Account & payments", route: "#/subscription", pro: true, title: "Subscription (Wevlo Pro)", desc: "Unlock Encryption, App Lock, Push Notifications & Pro Languages.", body: "Pay via Wallet or submit direct bKash/Nagad TrxID to activate Pro." },
     { cat: "Account & payments", route: "#/payments", title: "Payments history", desc: "Track every payment and its status.", body: "View Pending, Approved and Completed transactions." },
     { cat: "Tools", route: "#/icons", title: "Icon Library", desc: "Free outline icons for your projects.", body: "Search Lucide icons and copy code with 1 click." },
@@ -26,9 +26,9 @@ export function renderExtraPages(ctx) {
 
   const faqs = [
     ["What is the difference between APK and AAB?", "APK installs directly on Android phones. AAB is required by Google Play Store."],
-    ["How do I activate Wevlo Pro?", "Go to Subscription, pay via bKash/Nagad or Wallet, and submit your TrxID. Admin activates Pro after verification."],
-    ["Why does a feature say PRO or Disabled?", "Site administrators control which tools and languages are Free, Pro-Only, or Disabled from the Admin Panel."],
-    ["My build failed. What should I check?", "Check the Build Output and Problems tab for exact compiler error lines and click Auto-Fix if a Gradle file is missing."],
+    ["How do I activate Wevlo Pro?", "Go to Subscription, pay via bKash/Nagad or Wallet, and submit your TrxID. Pro activates automatically after verification."],
+    ["Why does a feature say PRO or Unavailable?", "Some advanced tools and languages require a Wevlo Pro plan or may be temporarily unavailable during maintenance."],
+    ["My build failed. What should I check?", "Check the Build Output and Problems tab for exact compiler error lines and click Auto-Fix if a Gradle or YAML file has an issue."],
     ["Are my GitHub files safe?", "Yes, Wevlo uses official Firebase GitHub OAuth tokens stored only for your active browser session."]
   ];
 
@@ -162,7 +162,6 @@ export function renderExtraPages(ctx) {
           </div>
         </div>
 
-        <!-- Direct bKash / Nagad Subscription Checkout -->
         <div class="wevlo-card p-5 space-y-3.5 text-xs">
           <h3 class="font-extrabold text-base">Direct bKash / Nagad Subscription (${subDur === "yearly" ? "Yearly" : "Monthly"} — ৳${payAmt})</h3>
           <div class="grid grid-cols-2 gap-2">
