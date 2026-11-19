@@ -14,12 +14,12 @@ import { renderExtraPages } from "./pages-extra.js";
 // ১. Firebase Config (এখানে আপনার তথ্য বসান)
 // ======================================================
 const firebaseConfig = {
-  apiKey: "YOUR_FIREBASE_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBXUklgCWDOujtIuSZvW_VDnEVu6WKFrNA",
+  authDomain: "hwllo-cdde8.firebaseapp.com",
+  projectId: "hwllo-cdde8",
+  storageBucket: "hwllo-cdde8.firebasestorage.app",
+  messagingSenderId: "814010361703",
+  appId: "1:814010361703:web:7ae39494076f943b2a71c2"
 };
 
 let auth = null;
