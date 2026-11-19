@@ -15,7 +15,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ======================================================
-// ১. Security & Password Configuration
+// 1. Security & Password Configuration
 // ======================================================
 export const ADMIN_EMAILS = [
   "mohirkhan01763@gmail.com",
@@ -44,7 +44,7 @@ export function isAdminUser(state) {
 }
 
 // ======================================================
-// ২. পুরো ওয়েবসাইটের ফিচার ক্যাটালগ (Free / Pro / Off)
+// 2. Website Feature Catalog (Free / Pro / Off)
 // ======================================================
 export const FEATURE_CATALOG = [
   { key: "codeEditor", group: "Core Tools", label: "Code Editor (HTML/CSS/JS)" },
@@ -81,7 +81,7 @@ export const DEFAULT_PAYMENT_CONFIG = {
   nagadNumber: "01700000000",
   proMonthlyPrice: 299,
   proYearlyPrice: 2499,
-  notice: "Send Money করে TrxID সাবমিট করুন। যাচাই করে সাথে সাথে অ্যাক্টিভ করা হবে।"
+  notice: "Send money and submit your TrxID. It will be activated shortly after verification."
 };
 
 export function checkFeatureAccess(featureKey, state) {
@@ -94,7 +94,7 @@ export function checkFeatureAccess(featureKey, state) {
 }
 
 // ======================================================
-// ৩. Firestore Sync Engine
+// 3. Firestore Sync Engine
 // ======================================================
 let db = null;
 let unsubUser = null;
@@ -174,8 +174,8 @@ export function initCloudFirestore(fbApp, ctx) {
   };
 
   window.submitCloudPayment = async ({ type, method, amount, trxId, planDurationDays = 0, screenshotName = "" }) => {
-    if (!state.user) return showToast("পেমেন্ট করতে আগে Gmail দিয়ে লগইন করুন!", "error");
-    if (!db) return showToast("Firestore চালু করা হয়নি!", "error");
+    if (!state.user) return showToast("Please sign in with Gmail or Email first to submit a payment!", "error");
+    if (!db) return showToast("Firestore is not initialized!", "error");
     try {
       await addDoc(collection(db, "payments"), {
         uid: state.user.uid,
@@ -186,7 +186,7 @@ export function initCloudFirestore(fbApp, ctx) {
         createdAt: serverTimestamp(),
         dateStr: new Date().toLocaleDateString()
       });
-      showToast("পেমেন্ট রিকোয়েস্ট পাঠানো হয়েছে! যাচাই করে দ্রুত অ্যাপ্রুভ করা হবে।", "success");
+      showToast("Payment request submitted! It will be approved shortly after verification.", "success");
       return true;
     } catch (e) {
       showToast("Payment Error: " + e.message, "error");
@@ -195,9 +195,9 @@ export function initCloudFirestore(fbApp, ctx) {
   };
 
   window.buyProWithCloudWallet = async (price, days) => {
-    if (!state.user || !db) return showToast("আগে Gmail দিয়ে লগইন করুন!", "error");
+    if (!state.user || !db) return showToast("Please sign in first!", "error");
     if (state.wallet.balance < price) {
-      showToast(`Wallet balance কম! কমপক্ষে ৳${price} Add Funds করুন।`, "error");
+      showToast(`Insufficient wallet balance! Please add at least ৳${price}.`, "error");
       return ctx.navigate("#/wallet");
     }
     try {
@@ -218,7 +218,7 @@ export function initCloudFirestore(fbApp, ctx) {
         createdAt: serverTimestamp(),
         dateStr: new Date().toLocaleDateString()
       });
-      showToast("Wevlo Pro অ্যাক্টিভ হয়েছে!", "success");
+      showToast("Wevlo Pro activated!", "success");
     } catch (e) {
       showToast(e.message, "error");
     }
@@ -242,7 +242,7 @@ async function loadAdminData(ctx) {
 }
 
 // ======================================================
-// ৪. Control Panel UI (#/admin — Hidden From Normal Users)
+// 4. Control Panel UI (#/admin — Hidden From Normal Users)
 // ======================================================
 export function renderAdminPanel(ctx) {
   const { state, showToast, render } = ctx;
@@ -328,7 +328,7 @@ export function renderAdminPanel(ctx) {
     if (!db) return;
     try {
       await setDoc(doc(db, "config", "features"), state.featureRules, { merge: true });
-      showToast("সব ফিচার কন্ট্রোল লাইভ সেভ হয়েছে!", "success");
+      showToast("All feature controls saved live!", "success");
     } catch (e) { showToast("Save Error: " + e.message, "error"); }
   };
 
@@ -350,7 +350,7 @@ export function renderAdminPanel(ctx) {
   window.adminChangePasswordAction = async () => {
     const newPass = document.getElementById("admNewPassInput")?.value.trim();
     if (!newPass || newPass.length < 4) {
-      return showToast("কমপক্ষে ৪ অক্ষরের নতুন পাসওয়ার্ড দিন!", "error");
+      return showToast("Password must be at least 4 characters!", "error");
     }
     localStorage.setItem("wevlo_custom_admin_pin", newPass);
     state.customAdminPin = newPass;
@@ -359,7 +359,7 @@ export function renderAdminPanel(ctx) {
       await setDoc(doc(db, "config", "security"), { adminPin: newPass }, { merge: true }).catch(() => {});
     }
     document.getElementById("admNewPassInput").value = "";
-    showToast(`Password সফলভাবে আপডেট হয়েছে! (${newPass})`, "success");
+    showToast(`Password updated successfully! (${newPass})`, "success");
     render();
   };
 
@@ -460,7 +460,7 @@ export function renderAdminPanel(ctx) {
             <div class="flex flex-wrap justify-between items-center gap-2">
               <div>
                 <h2 class="font-extrabold text-base">Website Feature Control</h2>
-                <p class="text-muted">কোন ফিচার Free, কোনটা Pro আর কোনটা বন্ধ রাখবেন সিলেক্ট করুন।</p>
+                <p class="text-muted">Choose whether each feature is Free, Pro Only, or Disabled.</p>
               </div>
               <button onclick="adminSaveFeatureRules()" class="btn-purple px-5 py-2.5 rounded-full font-bold">💾 Save All</button>
             </div>
@@ -496,7 +496,7 @@ export function renderAdminPanel(ctx) {
         ? `<div class="wevlo-card p-5 space-y-5 text-xs">
             <div>
               <h2 class="font-extrabold text-base">Payment Setup</h2>
-              <p class="text-muted">bKash, Nagad এবং সাবস্ক্রিপশন ফি আপডেট করুন।</p>
+              <p class="text-muted">Update bKash, Nagad numbers and subscription pricing.</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label class="font-bold text-muted">bKash Number</label><input id="admBkash" value="${pCfg.bkashNumber}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2.5 bg-transparent" /></div>
@@ -510,7 +510,7 @@ export function renderAdminPanel(ctx) {
             <div class="pt-4 border-t border-soft space-y-3">
               <div>
                 <h3 class="font-extrabold text-base flex items-center gap-2 text-slate-900"><i data-lucide="key-round" class="w-4 h-4 text-purple-600"></i> Change Access Password / PIN</h3>
-                <p class="text-muted">বর্তমান সক্রিয় পাসওয়ার্ড/পিন: <b class="text-purple-600">${currentAdminPass}</b></p>
+                <p class="text-muted">Current active password/PIN: <b class="text-purple-600">${currentAdminPass}</b></p>
               </div>
               <div class="flex flex-wrap gap-2">
                 <input id="admNewPassInput" type="text" placeholder="Enter New Password..." class="flex-1 min-w-[200px] border-2 border-purple-500/50 rounded-xl px-4 py-2.5 bg-transparent font-bold focus:outline-none focus:border-purple-600" />
