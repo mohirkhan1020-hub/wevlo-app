@@ -30,7 +30,7 @@
       <div class="overflow-y-auto px-4 py-4 space-y-4 flex-1">
         <!-- Logo -->
         <div class="flex items-center justify-between px-2">
-          <a href="#/" onclick="navigate('#/')" class="flex items-center gap-1.5">
+          <a href="#/" onclick="navigate('#/'); secretAdminTap()" class="flex items-center gap-1.5 select-none">
             <svg width="30" height="24" viewBox="0 0 36 28" fill="none">
               <defs>
                 <linearGradient id="wGrad" x1="0" y1="0" x2="36" y2="28" gradientUnits="userSpaceOnUse">
@@ -227,6 +227,18 @@
       <p id="guideBody" class="text-xs leading-relaxed text-muted"></p>
       <div class="pt-2 flex justify-end">
         <button id="guideActionBtn" class="btn-purple px-5 py-2 rounded-full text-xs font-bold">Open Feature →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Access Verification Modal (No user-facing hints) -->
+  <div id="secretAccessModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="surface-card w-full max-w-xs rounded-[24px] p-5 space-y-3 shadow-2xl animate-slide-up">
+      <h4 class="font-extrabold text-sm text-center">Verification</h4>
+      <input id="secretAccessInput" type="password" onkeydown="if(event.key==='Enter') submitSecretAdminPin()" placeholder="Access code" class="w-full text-center tracking-widest border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent focus:outline-none focus:border-purple-600" />
+      <div class="flex gap-2">
+        <button onclick="document.getElementById('secretAccessModal').classList.add('hidden'); document.getElementById('secretAccessModal').classList.remove('flex')" class="flex-1 py-2 rounded-full border border-soft text-xs font-bold">Cancel</button>
+        <button onclick="submitSecretAdminPin()" class="flex-1 btn-purple py-2 rounded-full text-xs font-bold">Verify</button>
       </div>
     </div>
   </div>
