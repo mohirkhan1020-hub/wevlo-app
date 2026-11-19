@@ -4,7 +4,6 @@ import {
   GoogleAuthProvider,
   GithubAuthProvider,
   signInWithPopup,
-  linkWithPopup,
   signOut,
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -12,7 +11,7 @@ import { renderExtraPages } from "./pages-extra.js";
 import { renderProCodeEditor, renderProGithubBuild } from "./ide-editors.js";
 
 // ======================================================
-// ১. আপনার Firebase Config এখানে বসান
+// ১. আপনার Firebase Configuration
 // ======================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBXUklgCWDOujtIuSZvW_VDnEVu6WKFrNA",
@@ -25,15 +24,13 @@ const firebaseConfig = {
 
 let auth = null;
 try {
-  if (firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY") {
-    auth = getAuth(initializeApp(firebaseConfig));
-  }
+  auth = getAuth(initializeApp(firebaseConfig));
 } catch (err) {
-  console.warn("Firebase init skipped:", err.message);
+  console.warn("Firebase init error:", err.message);
 }
 
 // ======================================================
-// ২. Global Application State (Clean Profile, Multi-Language)
+// ২. Global Application State
 // ======================================================
 const savedProfile = JSON.parse(localStorage.getItem("wevlo_profile") || "null");
 if (savedProfile && savedProfile.name === "Wevlo Developer") {
@@ -127,7 +124,7 @@ window.showToast = (msg, type = "info") => {
 };
 
 // ======================================================
-// ৪. Firebase Gmail & GitHub Auth
+// ৪. Firebase Gmail & GitHub Auth (Single Popup Fixed)
 // ======================================================
 if (auth) onAuthStateChanged(auth, (u) => { state.user = u; updateAccountUI(); });
 
@@ -146,27 +143,48 @@ function updateAccountUI() {
 updateAccountUI();
 
 window.loginWithGoogle = async () => {
-  if (!auth) return window.showToast("আগে app.js-এ Firebase Config বসান!", "error");
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); window.showToast("Gmail লগইন সফল!", "success"); document.getElementById("accountMenu").classList.add("hidden"); } catch (e) { window.showToast(e.message, "error"); }
+  if (!auth) return window.showToast("Firebase configure করা হয়নি!", "error");
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+    window.showToast("Gmail লগইন সফল!", "success");
+    document.getElementById("accountMenu").classList.add("hidden");
+  } catch (e) {
+    if (e.code === "auth/popup-closed-by-user") window.showToast("লগইন পপআপ বন্ধ হয়েছে, আবার চেষ্টা করুন।", "error");
+    else window.showToast(e.message, "error");
+  }
 };
 
 window.loginWithGithub = async () => {
-  if (!auth) return window.showToast("আগে app.js-এ Firebase Config বসান!", "error");
-  const p = new GithubAuthProvider(); p.addScope("repo"); p.addScope("workflow");
+  if (!auth) return window.showToast("Firebase configure করা হয়নি!", "error");
+  const p = new GithubAuthProvider();
+  p.addScope("repo");
+  p.addScope("workflow");
   try {
-    const res = auth.currentUser ? await linkWithPopup(auth.currentUser, p).catch(() => signInWithPopup(auth, p)) : await signInWithPopup(auth, p);
+    const res = await signInWithPopup(auth, p);
     const cred = GithubAuthProvider.credentialFromResult(res);
     if (cred?.accessToken) {
-      state.githubToken = cred.accessToken; sessionStorage.setItem("wevlo_gh_token", cred.accessToken);
-      state.githubUser = await ghFetch("/user"); sessionStorage.setItem("wevlo_gh_user", JSON.stringify(state.githubUser));
-      await window.loadGithubRepos(); updateAccountUI(); window.render(); window.showToast("GitHub কানেক্ট হয়েছে!", "success");
+      state.githubToken = cred.accessToken;
+      sessionStorage.setItem("wevlo_gh_token", cred.accessToken);
+      state.githubUser = await ghFetch("/user");
+      sessionStorage.setItem("wevlo_gh_user", JSON.stringify(state.githubUser));
+      await window.loadGithubRepos();
+      updateAccountUI();
+      window.render();
+      window.showToast("GitHub কানেক্ট হয়েছে!", "success");
     }
     document.getElementById("accountMenu").classList.add("hidden");
-  } catch (e) { window.showToast(e.message, "error"); }
+  } catch (e) {
+    if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
+      window.showToast("পপআপ বন্ধ/ব্লক হয়েছে! Chrome Pop-ups Allow করে আবার চেষ্টা করুন।", "error");
+    } else {
+      window.showToast(e.message, "error");
+    }
+  }
 };
 
 window.confirmLogout = () => openConfirmModal({
-  title: "Remove / Sign Out Account?", message: "This will sign out and clear cached Gmail and GitHub session.",
+  title: "Remove / Sign Out Account?",
+  message: "This will sign out and clear cached Gmail and GitHub session.",
   onConfirm: async () => {
     try { if (auth) await signOut(auth); if (window.indexedDB) indexedDB.deleteDatabase("firebaseLocalStorageDb"); } catch {}
     state.user = null; state.githubToken = null; state.githubUser = null; state.githubRepos = []; state.ghIdeOpen = false;
