@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wevlo — Build Websites &amp; Android APKs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="app-bg text-main antialiased">
+
+  <div class="flex min-h-screen">
+    <!-- Mobile Sidebar Overlay -->
+    <div id="drawerOverlay" onclick="toggleDrawer(false)" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden lg:hidden"></div>
+
+    <!-- Collapsible Sidebar -->
+    <aside id="sidebar" class="fixed lg:sticky top-0 left-0 z-50 h-screen w-72 surface-card border-r border-soft flex flex-col justify-between transform -translate-x-full lg:translate-x-0 transition-transform duration-300 rounded-none">
+      <div class="overflow-y-auto px-4 py-4 space-y-4 flex-1">
+        <div class="flex items-center justify-between px-2">
+          <a href="#/" onclick="navigate('#/')" class="flex items-center gap-1.5">
+            <svg width="30" height="24" viewBox="0 0 36 28" fill="none">
+              <defs>
+                <linearGradient id="wGrad" x1="0" y1="0" x2="36" y2="28" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#8B5CF6" />
+                  <stop offset="1" stop-color="#4F46E5" />
+                </linearGradient>
+              </defs>
+              <path d="M3 5L10.5 22L18 9L25.5 22L33 5" stroke="url(#wGrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="text-xl font-extrabold tracking-tight">evlo</span>
+          </a>
+          <button onclick="toggleDrawer(false)" class="lg:hidden p-1.5 rounded-lg text-muted hover:bg-purple-500/10">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <nav id="sidebarNav" class="space-y-0.5 text-[13px] font-medium"></nav>
+      </div>
+
+      <!-- Upgrade to Pro Banner -->
+      <div class="p-3.5 border-t border-soft space-y-2">
+        <div class="hero-lavender rounded-2xl p-3.5">
+          <div class="flex items-center justify-between mb-1">
+            <span class="flex items-center gap-1.5 font-bold text-xs text-slate-900">
+              <span class="w-6 h-6 rounded-lg bg-purple-600 text-white flex items-center justify-center">
+                <i data-lucide="crown" class="w-3.5 h-3.5"></i>
+              </span>
+              Upgrade to Pro
+            </span>
+            <span class="pro-badge">PRO</span>
+          </div>
+          <p class="text-[11px] text-slate-600 mb-2.5 leading-snug">
+            Unlock Encryption, App Lock, Push Notifications &amp; Ads.
+          </p>
+          <button onclick="navigate('#/subscription'); toggleDrawer(false)" class="w-full btn-purple py-2 rounded-full text-xs font-bold">
+            Go Pro
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Wrapper -->
+    <div class="flex-1 flex flex-col min-w-0 pb-24 lg:pb-8">
+      <!-- Topbar -->
+      <header class="sticky top-0 z-30 surface-glass border-b border-soft">
+        <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div id="headerLeft" class="flex items-center gap-3"></div>
+
+          <div class="flex items-center gap-2 relative">
+            <!-- Light/Dark Theme Toggle -->
+            <button onclick="toggleTheme()" title="Toggle Light/Dark Theme" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-soft text-xs font-bold hover:bg-purple-500/10 transition">
+              <i id="themeIcon" data-lucide="sun" class="w-4 h-4 text-purple-600"></i>
+              <span id="themeLabel" class="hidden sm:inline">Light</span>
+            </button>
+
+            <!-- Notifications Bell -->
+            <button onclick="showToast('All systems operational — no unread alerts', 'info')" class="relative p-2 rounded-full text-muted hover:bg-purple-500/10">
+              <i data-lucide="bell" class="w-5 h-5"></i>
+            </button>
+
+            <!-- Profile Avatar Button -->
+            <button onclick="toggleAccountMenu()" class="flex items-center gap-1.5 focus:outline-none">
+              <div class="relative">
+                <div id="userAvatar" class="w-9 h-9 rounded-full btn-purple flex items-center justify-center font-bold text-sm">W</div>
+                <span class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></span>
+              </div>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-muted"></i>
+            </button>
+
+            <!-- Account Dropdown -->
+            <div id="accountMenu" class="hidden absolute right-0 top-12 w-72 surface-card rounded-2xl shadow-2xl p-4 z-50 space-y-3">
+              <div class="pb-3 border-b border-soft">
+                <p id="accName" class="font-bold text-sm">Guest User</p>
+                <p id="accEmail" class="text-xs text-muted truncate">Sign in with Gmail or GitHub</p>
+              </div>
+              <div class="space-y-2">
+                <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-2 border border-soft hover:bg-purple-500/5 font-semibold text-xs py-2.5 rounded-xl transition">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12s4.3 9.5 9.5 9.5c5.5 0 9.1-3.8 9.1-9.2 0-.6-.1-1.1-.2-1.6H12z" />
+                  </svg>
+                  Continue with Gmail (Google)
+                </button>
+                <button onclick="loginWithGithub()" class="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs py-2.5 rounded-xl transition">
+                  <i data-lucide="github" class="w-4 h-4"></i>
+                  <span id="ghMenuLabel">Connect GitHub Account</span>
+                </button>
+                <button onclick="navigate('#/settings'); toggleAccountMenu()" class="w-full text-center text-xs font-semibold text-purple-600 py-1">
+                  Settings &amp; Profile
+                </button>
+                <button id="btnLogoutMenu" onclick="confirmLogout()" class="hidden w-full text-rose-600 hover:bg-rose-500/10 font-semibold text-xs py-2 rounded-xl transition">
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Dynamic Route Content -->
+      <main id="appContent" class="max-w-5xl w-full mx-auto px-4 py-5 space-y-5"></main>
+    </div>
+  </div>
+
+  <!-- Mobile Floating Bottom Navigation -->
+  <nav class="lg:hidden fixed bottom-3 left-4 right-4 z-30">
+    <div class="surface-glass border border-soft shadow-[0_8px_30px_rgba(91,33,182,0.14)] rounded-[28px] px-2 py-2 grid grid-cols-4">
+      <button onclick="navigate('#/')" data-bnav="#/" class="bnav-item flex flex-col items-center justify-center py-1 gap-0.5 text-slate-400">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <span class="text-[11px] font-semibold">Home</span>
+        <span class="bnav-dot w-6 h-0.5 rounded-full bg-transparent mt-0.5"></span>
+      </button>
+      <button onclick="navigate('#/templates')" data-bnav="#/templates" class="bnav-item flex flex-col items-center justify-center py-1 gap-0.5 text-slate-400">
+        <i data-lucide="layout-grid" class="w-5 h-5"></i>
+        <span class="text-[11px] font-semibold">Templates</span>
+        <span class="bnav-dot w-6 h-0.5 rounded-full bg-transparent mt-0.5"></span>
+      </button>
+      <button onclick="navigate('#/projects')" data-bnav="#/projects" class="bnav-item flex flex-col items-center justify-center py-1 gap-0.5 text-slate-400">
+        <i data-lucide="folder" class="w-5 h-5"></i>
+        <span class="text-[11px] font-semibold">Projects</span>
+        <span class="bnav-dot w-6 h-0.5 rounded-full bg-transparent mt-0.5"></span>
+      </button>
+      <button onclick="navigate('#/settings')" data-bnav="#/settings" class="bnav-item flex flex-col items-center justify-center py-1 gap-0.5 text-slate-400">
+        <i data-lucide="settings" class="w-5 h-5"></i>
+        <span class="text-[11px] font-semibold">Settings</span>
+        <span class="bnav-dot w-6 h-0.5 rounded-full bg-transparent mt-0.5"></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- New Project Modal -->
+  <div id="newProjectModal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+    <div class="surface-card w-full sm:max-w-md rounded-t-[28px] sm:rounded-[28px] p-6 space-y-4 shadow-2xl animate-slide-up">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xl font-extrabold">New project</h3>
+        <button onclick="closeNewProjectModal()" class="p-1.5 rounded-full hover:bg-purple-500/10 text-muted">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <input id="modalProjName" type="text" placeholder="Project name" class="w-full px-4 py-3.5 rounded-2xl border-2 border-purple-500/80 focus:outline-none focus:border-purple-600 text-sm font-medium bg-transparent" />
+      <div class="space-y-2.5">
+        <button type="button" onclick="selectModalType('html')" data-ptype="html" class="ptype-card active w-full text-left p-4 rounded-2xl border transition">
+          <p class="font-bold text-sm">HTML page</p>
+          <p class="text-xs text-muted">Single page</p>
+        </button>
+        <button type="button" onclick="selectModalType('multifile')" data-ptype="multifile" class="ptype-card w-full text-left p-4 rounded-2xl border transition">
+          <p class="font-bold text-sm">Multi file</p>
+          <p class="text-xs text-muted">Empty HTML/CSS/JS</p>
+        </button>
+        <button type="button" onclick="selectModalType('webview')" data-ptype="webview" class="ptype-card w-full text-left p-4 rounded-2xl border transition">
+          <p class="font-bold text-sm">WebView app</p>
+          <p class="text-xs text-muted">Ready for APK</p>
+        </button>
+      </div>
+      <button onclick="confirmCreateProject()" class="w-full btn-purple py-3.5 rounded-full font-bold text-sm">
+        Create project
+      </button>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmModal" class="fixed inset-0 z-[55] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div class="surface-card w-full max-w-sm rounded-[24px] p-6 space-y-4 shadow-2xl animate-slide-up">
+      <div class="flex items-center gap-3">
+        <span class="w-10 h-10 rounded-full bg-rose-500/15 text-rose-600 flex items-center justify-center shrink-0">
+          <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+        </span>
+        <div>
+          <h4 id="confirmTitle" class="font-extrabold text-base">Confirm Action</h4>
+          <p id="confirmMsg" class="text-xs text-muted mt-0.5">Are you sure you want to proceed?</p>
+        </div>
+      </div>
+      <div class="flex gap-2.5 justify-end pt-2">
+        <button onclick="closeConfirmModal()" class="px-4 py-2 rounded-full border border-soft text-xs font-bold">Cancel</button>
+        <button id="confirmOkBtn" class="px-5 py-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guide Detail Modal -->
+  <div id="guideModal" class="fixed inset-0 z-[55] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div class="surface-card w-full max-w-lg rounded-[26px] p-6 space-y-4 shadow-2xl animate-slide-up max-h-[85vh] overflow-y-auto">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <span id="guideCatBadge" class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2.5 py-0.5 rounded-full">Guide</span>
+          <h3 id="guideTitle" class="text-lg font-extrabold mt-1.5">Guide Title</h3>
+        </div>
+        <button onclick="document.getElementById('guideModal').classList.add('hidden')" class="p-1.5 rounded-full hover:bg-purple-500/10">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <p id="guideBody" class="text-xs leading-relaxed text-muted"></p>
+      <div class="pt-2 flex justify-end">
+        <button id="guideActionBtn" class="btn-purple px-5 py-2 rounded-full text-xs font-bold">Open Feature →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] hidden text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
