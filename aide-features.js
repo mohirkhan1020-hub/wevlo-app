@@ -1,5 +1,5 @@
 // ======================================================
-// AIDE Advanced Engine (Java, Kotlin, Dart/Flutter, Python, JS, XML, YAML)
+// AIDE Advanced Engine (Java, Kotlin, Dart/Flutter, Python, JS, XML, YAML, Markdown)
 // ======================================================
 
 let cmLoadingPromise = null;
@@ -39,6 +39,8 @@ export async function ensureCodeMirror() {
     await addJs(`${base}/mode/dart/dart.min.js`, true);
     await addJs(`${base}/mode/python/python.min.js`, true);
     await addJs(`${base}/mode/yaml/yaml.min.js`, true);
+    await addJs(`${base}/mode/markdown/markdown.min.js`, true);
+    await addJs(`${base}/mode/properties/properties.min.js`, true);
     await addJs(`${base}/addon/edit/closebrackets.min.js`);
     await addJs(`${base}/addon/edit/matchbrackets.min.js`);
     await addJs(`${base}/addon/hint/show-hint.min.js`);
@@ -49,12 +51,73 @@ export async function ensureCodeMirror() {
 }
 
 const HINTS_BY_TYPE = {
-  java: ["Activity", "onCreate(Bundle savedInstanceState)", "setContentView(R.layout.activity_main);", "Toast.makeText(this, \"\", Toast.LENGTH_SHORT).show();", "Intent", "WebView", "LinearLayout", "TextView", "Button"],
-  kt: ["override fun onCreate(savedInstanceState: Bundle?)", "setContentView(R.layout.activity_main)", "Toast.makeText(this, \"\", Toast.LENGTH_SHORT).show()", "val layout = LinearLayout(this)", "Button(this).apply { }"],
-  dart: ["StatelessWidget", "StatefulWidget", "Scaffold(", "AppBar(title: const Text(''))", "Center(child: )", "ElevatedButton(onPressed: () {}, child: const Text(''))", "setState(() {})", "Column(children: [])"],
-  py: ["from kivy.app import App", "from kivy.uix.button import Button", "from kivy.uix.label import Label", "from kivy.uix.boxlayout import BoxLayout", "def build(self):"],
-  xml: ["android:layout_width=\"match_parent\"", "android:layout_height=\"wrap_content\"", "android:orientation=\"vertical\"", "android:text=\"\"", "android:background=\"#6D28D9\"", "<TextView", "<Button", "<EditText"],
-  yml: ["name: Build", "on:", "  workflow_dispatch:", "permissions:", "  contents: write", "jobs:", "  build:", "    runs-on: ubuntu-latest", "    steps:", "      - uses: actions/checkout@v4"]
+  java: [
+    "Activity",
+    "onCreate(Bundle savedInstanceState)",
+    "setContentView(R.layout.activity_main);",
+    "Toast.makeText(this, \"\", Toast.LENGTH_SHORT).show();",
+    "Intent",
+    "WebView",
+    "LinearLayout",
+    "TextView",
+    "Button"
+  ],
+  kt: [
+    "override fun onCreate(savedInstanceState: Bundle?)",
+    "setContentView(R.layout.activity_main)",
+    "Toast.makeText(this, \"\", Toast.LENGTH_SHORT).show()",
+    "val layout = LinearLayout(this)",
+    "Button(this).apply { }"
+  ],
+  dart: [
+    "StatelessWidget",
+    "StatefulWidget",
+    "Scaffold(",
+    "AppBar(title: const Text(''))",
+    "Center(child: )",
+    "ElevatedButton(onPressed: () {}, child: const Text(''))",
+    "setState(() {})",
+    "Column(children: [])"
+  ],
+  py: [
+    "from kivy.app import App",
+    "from kivy.uix.button import Button",
+    "from kivy.uix.label import Label",
+    "from kivy.uix.boxlayout import BoxLayout",
+    "def build(self):"
+  ],
+  xml: [
+    "android:layout_width=\"match_parent\"",
+    "android:layout_height=\"wrap_content\"",
+    "android:orientation=\"vertical\"",
+    "android:text=\"\"",
+    "android:background=\"#6D28D9\"",
+    "<TextView",
+    "<Button",
+    "<EditText"
+  ],
+  gradle: [
+    "implementation 'androidx.appcompat:appcompat:1.7.0'",
+    "implementation 'com.google.android.material:material:1.12.0'",
+    "compileSdk 34",
+    "minSdk 24",
+    "targetSdk 34"
+  ],
+  html: ["<!DOCTYPE html>", "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />", "<link rel=\"stylesheet\" href=\"\" />", "<script src=\"\"></script>"],
+  css: ["display: flex;", "justify-content: center;", "align-items: center;", "border-radius: 16px;", "background-color: #6d28d9;"],
+  js: ["document.getElementById(\"\")", "addEventListener(\"click\", () => {})", "console.log()", "fetch(\"\")"],
+  yml: [
+    "name: Build",
+    "on:",
+    "  workflow_dispatch:",
+    "permissions:",
+    "  contents: write",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: actions/checkout@v4"
+  ]
 };
 
 export async function mountCodeMirror({ hostId, value, filePath, errorLines = [], onChange, onCursor }) {
@@ -73,6 +136,10 @@ export async function mountCodeMirror({ hostId, value, filePath, errorLines = []
     ? "text/x-python"
     : filePath.endsWith(".yaml") || filePath.endsWith(".yml")
     ? "text/x-yaml"
+    : filePath.endsWith(".md")
+    ? "text/x-markdown"
+    : filePath.endsWith(".properties") || filePath.endsWith(".spec")
+    ? "text/x-properties"
     : filePath.endsWith(".json")
     ? "application/json"
     : filePath.endsWith(".xml")
@@ -130,24 +197,24 @@ export async function runEditorToolbarAction(action, showToast) {
   } else if (action === "clear") {
     cm.setValue("");
     cm.focus();
-    showToast?.("সব কোড Clear করা হয়েছে!", "info");
+    showToast?.("Editor cleared!", "info");
   } else if (action === "copy") {
     const txt = cm.getSelection() || cm.getValue();
     try {
       await navigator.clipboard.writeText(txt);
-      showToast?.("কোড কপি হয়েছে!", "success");
+      showToast?.("Code copied!", "success");
     } catch {
-      showToast?.("Clipboard permission নেই!", "error");
+      showToast?.("Clipboard permission denied!", "error");
     }
   } else if (action === "paste") {
     try {
       const txt = await navigator.clipboard.readText();
-      if (!txt) return showToast?.("Clipboard খালি!", "error");
+      if (!txt) return showToast?.("Clipboard is empty!", "error");
       cm.replaceSelection(txt);
       cm.focus();
-      showToast?.("কোড পেস্ট হয়েছে!", "success");
+      showToast?.("Code pasted!", "success");
     } catch {
-      showToast?.("ব্রাউজার Clipboard allow না করলে কীবোর্ড দিয়ে Paste করুন।", "error");
+      showToast?.("Clipboard blocked by browser. Use keyboard paste.", "error");
     }
   } else if (action === "undo") {
     cm.undo();
