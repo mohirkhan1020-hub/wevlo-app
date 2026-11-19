@@ -9,9 +9,10 @@ import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { renderExtraPages } from "./pages-extra.js";
+import { renderProCodeEditor, renderProGithubBuild } from "./ide-editors.js";
 
 // ======================================================
-// ১. Firebase Config (এখানে আপনার তথ্য বসান)
+// ১. আপনার Firebase Config এখানে বসান
 // ======================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBXUklgCWDOujtIuSZvW_VDnEVu6WKFrNA",
@@ -24,7 +25,7 @@ const firebaseConfig = {
 
 let auth = null;
 try {
-  if (firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY") {
+  if (firebaseConfig.apiKey !== "AIzaSyBXUklgCWDOujtIuSZvW_VDnEVu6WKFrNA") {
     auth = getAuth(initializeApp(firebaseConfig));
   }
 } catch (err) {
@@ -32,16 +33,24 @@ try {
 }
 
 // ======================================================
-// ২. Global Application State
+// ২. Global Application State (Demo Profile Removed)
 // ======================================================
+const savedProfile = JSON.parse(localStorage.getItem("wevlo_profile") || "null");
+if (savedProfile && savedProfile.name === "Wevlo Developer") {
+  savedProfile.name = "";
+  localStorage.setItem("wevlo_profile", JSON.stringify(savedProfile));
+}
+
 const state = {
   route: window.location.hash || "#/",
   theme: localStorage.getItem("wevlo_theme") || "light",
   user: null,
-  profile: JSON.parse(
-    localStorage.getItem("wevlo_profile") ||
-      '{"name":"Wevlo Developer","pkgPrefix":"com.wevlo","emailNotify":true,"autoSave":true}'
-  ),
+  profile: savedProfile || {
+    name: "",
+    pkgPrefix: "com.wevlo",
+    emailNotify: true,
+    autoSave: true
+  },
   plan: localStorage.getItem("wevlo_plan") || "Free",
   githubToken: sessionStorage.getItem("wevlo_gh_token") || null,
   githubUser: JSON.parse(sessionStorage.getItem("wevlo_gh_user") || "null"),
@@ -49,6 +58,7 @@ const state = {
   repoFilter: "",
   selectedGhRepo: "",
   ghBranch: "main",
+  ghIdeOpen: false,
   ghJavaCode: `import android.app.Activity;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -85,7 +95,6 @@ public class MainActivity extends Activity {
   files: JSON.parse(localStorage.getItem("wevlo_files") || "[]"),
   payments: JSON.parse(localStorage.getItem("wevlo_payments") || "[]"),
   pushLogs: JSON.parse(localStorage.getItem("wevlo_push_logs") || "[]"),
-  editorTab: "html",
   previewDevice: "phone",
   modalType: "html",
   wallet: JSON.parse(
@@ -96,13 +105,11 @@ public class MainActivity extends Activity {
   payMethod: "bKash",
   payAmount: 100,
   depositFileName: "",
-  // Build Options Categories (42 Settings)
   buildConfig: {
     buildType: "Debug",
     pkgName: "com.wevlo.app",
     versionName: "1.0.0",
     versionCode: Number(localStorage.getItem("wevlo_ver_code") || 1),
-    // 1. Display & Behavior (8)
     fullscreen: false,
     pullToRefresh: true,
     keepScreenOn: false,
@@ -111,14 +118,12 @@ public class MainActivity extends Activity {
     swipeBack: true,
     loadingBar: true,
     confirmExit: false,
-    // 2. Web Engine (6)
     jsEnabled: true,
     domStorage: true,
     fileAccess: true,
     geoLocation: false,
     zoomControls: false,
     userAgent: "Mobile (Default)",
-    // 3. Permissions (9)
     permInternet: true,
     permCamera: false,
     permMic: false,
@@ -128,25 +133,19 @@ public class MainActivity extends Activity {
     permVibrate: true,
     permNotify: true,
     permBluetooth: false,
-    // 4. Bottom Navigation (3)
     bottomNav: false,
     bottomLabels: true,
     bottomTabsJson: "Home|#,Profile|#profile",
-    // 5. Custom Code (2)
     customInject: false,
     customCode: "/* Custom CSS/JS */",
-    // 6. Encryption PRO (3)
     encryption: false,
     encMode: "Basic",
     encPass: "",
-    // 7. App Lock PRO (3)
     appLock: false,
     lockTimeout: "Immediately",
     lockPass: "",
-    // 8. Push Notifications PRO (2)
     pushPro: false,
     pushTopic: "all_users",
-    // 9. Ads PRO (6)
     adsPro: false,
     adBanner: true,
     adInterstitial: false,
@@ -205,7 +204,6 @@ function getActiveProject() {
   return state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0] || null;
 }
 
-// Confirmation Modal
 let confirmCallback = null;
 function openConfirmModal({ title, message, onConfirm }) {
   document.getElementById("confirmTitle").textContent = title;
@@ -237,7 +235,7 @@ window.showToast = (msg, type = "info") => {
 };
 
 // ======================================================
-// ৪. Firebase Gmail & GitHub Auth
+// ৪. Firebase Gmail & GitHub Auth (Clean Account System)
 // ======================================================
 if (auth) {
   onAuthStateChanged(auth, (u) => {
@@ -248,21 +246,33 @@ if (auth) {
 
 function updateAccountUI() {
   const av = document.getElementById("userAvatar");
+  const accName = document.getElementById("accName");
+  const accEmail = document.getElementById("accEmail");
+  const btnLogout = document.getElementById("btnLogoutMenu");
+
   if (state.user) {
-    av.textContent = (state.user.displayName || state.user.email || "W")[0].toUpperCase();
-    document.getElementById("accName").textContent = state.user.displayName || state.profile.name;
-    document.getElementById("accEmail").textContent = state.user.email || "Signed in";
-    document.getElementById("btnLogoutMenu").classList.remove("hidden");
+    const label = state.user.displayName || state.profile.name || state.user.email || "User";
+    av.textContent = label[0].toUpperCase();
+    accName.textContent = label;
+    accEmail.textContent = state.user.email || state.githubUser?.login || "Signed in";
+    btnLogout.classList.remove("hidden");
+  } else if (state.githubUser) {
+    av.textContent = state.githubUser.login[0].toUpperCase();
+    accName.textContent = state.githubUser.login;
+    accEmail.textContent = "GitHub Connected";
+    btnLogout.classList.remove("hidden");
   } else {
     av.textContent = "W";
-    document.getElementById("accName").textContent = "Guest User";
-    document.getElementById("accEmail").textContent = "Sign in with Gmail or GitHub";
-    document.getElementById("btnLogoutMenu").classList.add("hidden");
+    accName.textContent = "Not Signed In";
+    accEmail.textContent = "Sign in with Gmail or GitHub";
+    btnLogout.classList.add("hidden");
   }
+
   document.getElementById("ghMenuLabel").textContent = state.githubToken
     ? `GitHub: @${state.githubUser?.login || "Connected"}`
     : "Connect GitHub Account";
 }
+updateAccountUI();
 
 window.loginWithGoogle = async () => {
   if (!auth) return window.showToast("আগে app.js-এ Firebase Config বসান!", "error");
@@ -303,16 +313,25 @@ window.loginWithGithub = async () => {
 
 window.confirmLogout = () =>
   openConfirmModal({
-    title: "Sign Out?",
-    message: "You will disconnect your active Gmail and GitHub session.",
+    title: "Remove / Sign Out Account?",
+    message: "This will sign out and clear your cached Gmail and GitHub session.",
     onConfirm: async () => {
-      if (auth) await signOut(auth);
+      try {
+        if (auth) await signOut(auth);
+        if (window.indexedDB) indexedDB.deleteDatabase("firebaseLocalStorageDb");
+      } catch {}
+      state.user = null;
       state.githubToken = null;
       state.githubUser = null;
+      state.githubRepos = [];
+      state.ghIdeOpen = false;
       sessionStorage.clear();
+      localStorage.removeItem("wevlo_profile");
+      state.profile.name = "";
+      document.getElementById("accountMenu").classList.add("hidden");
       updateAccountUI();
       window.render();
-      window.showToast("Signed out", "info");
+      window.showToast("Account removed & signed out!", "info");
     }
   });
 
@@ -451,7 +470,7 @@ window.confirmCreateProject = () => {
     name,
     type: state.modalType,
     url: "https://example.com",
-    html: `<div class="card">\n  <h1>${name}</h1>\n  <p>Built with Wevlo</p>\n  <button onclick="go()">Get Started</button>\n</div>`,
+    html: `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${name}</title>\n</head>\n<body>\n  <div class="card">\n    <h1>${name}</h1>\n    <p>Built with Wevlo</p>\n    <button onclick="go()">Get Started</button>\n  </div>\n</body>\n</html>`,
     css: `body{font-family:sans-serif;background:#f6f6fb;display:grid;place-items:center;min-height:100vh;margin:0}\n.card{background:#fff;padding:28px;border-radius:20px;text-align:center;box-shadow:0 10px 25px rgba(109,40,217,.1)}\nbutton{background:#6d28d9;color:#fff;border:none;padding:10px 22px;border-radius:99px;font-weight:bold}`,
     js: `function go(){\n  alert("Hello from ${name}!");\n}`,
     updatedAt: new Date().toLocaleDateString()
@@ -504,27 +523,32 @@ async function runGithubApkPipeline({
   permissions = ["INTERNET"],
   orientation = "unspecified",
   logElId,
-  existingFullRepo = null
+  existingFullRepo = null,
+  preserveExistingFiles = false
 }) {
   const logEl = document.getElementById(logElId);
-  logEl.classList.remove("hidden");
-  logEl.innerHTML = `
-    <div class="flex items-center gap-2 font-bold mb-2">
-      <span class="spinner"></span>
-      <span id="${logElId}_title">Preparing build...</span>
-    </div>
-    <div class="w-full h-2 bg-purple-100 rounded-full overflow-hidden mb-2">
-      <div id="${logElId}_bar" class="h-full bg-purple-600 transition-all duration-500" style="width:15%"></div>
-    </div>
-    <div id="${logElId}_logs" class="space-y-1"></div>`;
+  if (logEl) {
+    logEl.classList.remove("hidden");
+    logEl.innerHTML = `
+      <div class="flex items-center gap-2 font-bold mb-2">
+        <span class="spinner"></span>
+        <span id="${logElId}_title">Preparing build...</span>
+      </div>
+      <div class="w-full h-2 bg-purple-100 rounded-full overflow-hidden mb-2">
+        <div id="${logElId}_bar" class="h-full bg-purple-600 transition-all duration-500" style="width:15%"></div>
+      </div>
+      <div id="${logElId}_logs" class="space-y-1"></div>`;
+  }
 
   const logs = document.getElementById(`${logElId}_logs`);
   const setProg = (pct, msg) => {
-    document.getElementById(`${logElId}_bar`).style.width = pct + "%";
-    document.getElementById(`${logElId}_title`).textContent = msg;
+    const b = document.getElementById(`${logElId}_bar`);
+    const t = document.getElementById(`${logElId}_title`);
+    if (b) b.style.width = pct + "%";
+    if (t) t.textContent = msg;
   };
   const log = (h) => {
-    logs.innerHTML += `<div>• ${h}</div>`;
+    if (logs) logs.innerHTML += `<div>• ${h}</div>`;
   };
 
   if (!state.githubToken) {
@@ -549,47 +573,49 @@ async function runGithubApkPipeline({
       log(`Created repository <b>${targetRepo}</b>`);
     }
 
-    setProg(40, "Uploading Android Gradle project...");
-    const permXml = permissions.map((p) => `  <uses-permission android:name="android.permission.${p}" />`).join("\n");
-    const orientAttr = orientation.includes("Portrait")
-      ? 'android:screenOrientation="portrait"'
-      : orientation.includes("Landscape")
-      ? 'android:screenOrientation="landscape"'
-      : "";
-    const pkgPath = pkgName.replace(/\./g, "/");
+    setProg(40, "Triggering Gradle workflow...");
+    const workflowYaml = `name: Build APK\non:\n  push:\n    branches: [ "${branch}" ]\n  workflow_dispatch:\npermissions:\n  contents: write\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - uses: softprops/action-gh-release@v2\n        with:\n          tag_name: v${versionName}-\${{ github.run_number }}\n          files: app/build/outputs/apk/debug/app-debug.apk\n`;
 
-    const files = [
-      {
-        path: "settings.gradle",
-        content: `pluginManagement {\n  repositories { google(); mavenCentral(); gradlePluginPortal() }\n}\ndependencyResolutionManagement {\n  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n  repositories { google(); mavenCentral() }\n}\nrootProject.name = "WevloApp"\ninclude ':app'\n`
-      },
-      {
-        path: "build.gradle",
-        content: `plugins {\n  id 'com.android.application' version '8.5.2' apply false\n}\n`
-      },
-      {
-        path: "gradle.properties",
-        content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.nonTransitiveRClass=true\n`
-      },
-      {
-        path: "app/build.gradle",
-        content: `plugins {\n  id 'com.android.application'\n}\nandroid {\n  namespace '${pkgName}'\n  compileSdk 34\n  defaultConfig {\n    applicationId "${pkgName}"\n    minSdk 24\n    targetSdk 34\n    versionCode ${versionCode}\n    versionName "${versionName}"\n  }\n  compileOptions {\n    sourceCompatibility JavaVersion.VERSION_17\n    targetCompatibility JavaVersion.VERSION_17\n  }\n}\n`
-      },
-      {
-        path: "app/src/main/AndroidManifest.xml",
-        content: `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n${permXml}\n  <application android:label="${appName}" android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">\n    <activity android:name=".MainActivity" android:exported="true" ${orientAttr} android:configChanges="orientation|screenSize|keyboardHidden">\n      <intent-filter>\n        <action android:name="android.intent.action.MAIN" />\n        <category android:name="android.intent.category.LAUNCHER" />\n      </intent-filter>\n    </activity>\n  </application>\n</manifest>\n`
-      },
-      {
-        path: `app/src/main/java/${pkgPath}/MainActivity.java`,
-        content: `package ${pkgName};\n\n${javaSource.replace(/^package\s+[\w.]+;\s*/m, "")}`
-      },
-      {
-        path: ".github/workflows/wevlo-build.yml",
-        content: `name: Build APK\non:\n  push:\n    branches: [ "${branch}" ]\npermissions:\n  contents: write\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - uses: softprops/action-gh-release@v2\n        with:\n          tag_name: v${versionName}-\${{ github.run_number }}\n          files: app/build/outputs/apk/debug/app-debug.apk\n`
-      }
-    ];
+    let filesToPush = [{ path: ".github/workflows/wevlo-build.yml", content: workflowYaml }];
 
-    for (const f of files) {
+    if (!preserveExistingFiles) {
+      const permXml = permissions.map((p) => `  <uses-permission android:name="android.permission.${p}" />`).join("\n");
+      const orientAttr = orientation.includes("Portrait")
+        ? 'android:screenOrientation="portrait"'
+        : orientation.includes("Landscape")
+        ? 'android:screenOrientation="landscape"'
+        : "";
+      const pkgPath = pkgName.replace(/\./g, "/");
+      filesToPush = [
+        {
+          path: "settings.gradle",
+          content: `pluginManagement {\n  repositories { google(); mavenCentral(); gradlePluginPortal() }\n}\ndependencyResolutionManagement {\n  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n  repositories { google(); mavenCentral() }\n}\nrootProject.name = "WevloApp"\ninclude ':app'\n`
+        },
+        {
+          path: "build.gradle",
+          content: `plugins {\n  id 'com.android.application' version '8.5.2' apply false\n}\n`
+        },
+        {
+          path: "gradle.properties",
+          content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.nonTransitiveRClass=true\n`
+        },
+        {
+          path: "app/build.gradle",
+          content: `plugins {\n  id 'com.android.application'\n}\nandroid {\n  namespace '${pkgName}'\n  compileSdk 34\n  defaultConfig {\n    applicationId "${pkgName}"\n    minSdk 24\n    targetSdk 34\n    versionCode ${versionCode}\n    versionName "${versionName}"\n  }\n  compileOptions {\n    sourceCompatibility JavaVersion.VERSION_17\n    targetCompatibility JavaVersion.VERSION_17\n  }\n}\n`
+        },
+        {
+          path: "app/src/main/AndroidManifest.xml",
+          content: `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n${permXml}\n  <application android:label="${appName}" android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">\n    <activity android:name=".MainActivity" android:exported="true" ${orientAttr} android:configChanges="orientation|screenSize|keyboardHidden">\n      <intent-filter>\n        <action android:name="android.intent.action.MAIN" />\n        <category android:name="android.intent.category.LAUNCHER" />\n      </intent-filter>\n    </activity>\n  </application>\n</manifest>\n`
+        },
+        {
+          path: `app/src/main/java/${pkgPath}/MainActivity.java`,
+          content: `package ${pkgName};\n\n${javaSource.replace(/^package\s+[\w.]+;\s*/m, "")}`
+        },
+        ...filesToPush
+      ];
+    }
+
+    for (const f of filesToPush) {
       let sha;
       try {
         sha = (await ghFetch(`/repos/${owner}/${targetRepo}/contents/${f.path}?ref=${branch}`)).sha;
@@ -597,7 +623,7 @@ async function runGithubApkPipeline({
       await ghFetch(`/repos/${owner}/${targetRepo}/contents/${f.path}`, {
         method: "PUT",
         body: JSON.stringify({
-          message: `Update ${f.path}`,
+          message: `Wevlo update ${f.path}`,
           content: toBase64(f.content),
           branch,
           ...(sha ? { sha } : {})
@@ -607,7 +633,7 @@ async function runGithubApkPipeline({
 
     setProg(70, "Compiling APK on GitHub Actions...");
     log(
-      `Workflow triggered (<a href="https://github.com/${owner}/${targetRepo}/actions" target="_blank" class="text-purple-600 underline font-bold">Live Logs</a>)`
+      `Workflow running (<a href="https://github.com/${owner}/${targetRepo}/actions" target="_blank" class="text-purple-400 underline font-bold">Live Logs</a>)`
     );
 
     const timer = setInterval(async () => {
@@ -624,23 +650,25 @@ async function runGithubApkPipeline({
               state.buildConfig.versionCode += 1;
               localStorage.setItem("wevlo_ver_code", state.buildConfig.versionCode);
               addActivity(`Built APK for ${appName}`);
-              logs.innerHTML += `
-                <div class="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-slate-900">
-                  <p class="font-bold text-emerald-800 mb-2">APK Ready to Install!</p>
-                  <a href="${apk.browser_download_url}" class="inline-block btn-purple px-4 py-2 rounded-full text-xs font-bold">
-                    Download APK (${(apk.size / 1048576).toFixed(2)} MB)
-                  </a>
-                </div>`;
+              if (logs) {
+                logs.innerHTML += `
+                  <div class="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-slate-900">
+                    <p class="font-bold text-emerald-800 mb-2">APK Ready!</p>
+                    <a href="${apk.browser_download_url}" class="inline-block btn-purple px-4 py-2 rounded-full text-xs font-bold">
+                      Download APK (${(apk.size / 1048576).toFixed(2)} MB)
+                    </a>
+                  </div>`;
+              }
             }
           } else {
             setProg(100, "Build Failed");
-            log(`<span class="text-rose-600 font-bold">Failed (${latest.conclusion})</span>`);
+            log(`<span class="text-rose-500 font-bold">Failed (${latest.conclusion})</span>`);
           }
         }
       } catch {}
     }, 7000);
   } catch (e) {
-    log(`<span class="text-rose-600 font-bold">${e.message}</span>`);
+    log(`<span class="text-rose-500 font-bold">${e.message}</span>`);
   }
 }
 
@@ -855,60 +883,13 @@ function renderProjects() {
             <button onclick="confirmDeleteProject('${p.id}')" class="text-rose-500 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit</button>
+            <button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit Code</button>
             <button onclick="openProjectInPreview('${p.id}')" class="border border-soft px-3.5 py-1.5 rounded-full text-xs font-bold">Preview</button>
             <button onclick="openProjectInBuild('${p.id}')" class="bg-purple-50 text-purple-700 px-3.5 py-1.5 rounded-full text-xs font-bold">Build APK</button>
           </div>
         </div>`
         )
         .join("")}
-    </div>`;
-}
-
-function renderEditor() {
-  const proj = getActiveProject();
-  if (!proj) {
-    return `
-      <div class="wevlo-card p-6">
-        <div class="flex justify-between items-center mb-8">
-          <span class="font-bold">Choose a project</span>
-          <button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New project</button>
-        </div>
-        <p class="text-center text-xs text-muted py-8">No projects yet. Create a project first, then come back to edit.</p>
-      </div>`;
-  }
-  const val = proj[state.editorTab] || "";
-  const lines = Array.from({ length: Math.max(val.split("\n").length, 16) }, (_, i) => `<div>${i + 1}</div>`).join("");
-  const doc = `<!DOCTYPE html><html><head><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
-
-  return `
-    <div class="wevlo-card p-3.5 flex justify-between items-center">
-      <select onchange="switchActiveProject(this.value)" class="border border-soft rounded-xl px-3 py-1.5 text-xs font-bold bg-transparent">
-        ${state.projects.map((p) => `<option value="${p.id}" ${p.id === proj.id ? "selected" : ""}>${p.name}</option>`).join("")}
-      </select>
-      <button onclick="navigate('#/build')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Build APK →</button>
-    </div>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="wevlo-card p-4 space-y-3">
-        <div class="flex gap-2">
-          ${["html", "css", "js"]
-            .map(
-              (t) =>
-                `<button onclick="state.editorTab='${t}'; render()" class="px-4 py-1.5 rounded-full text-xs font-bold uppercase ${
-                  state.editorTab === t ? "btn-purple" : "border border-soft"
-                }">${t}</button>`
-            )
-            .join("")}
-        </div>
-        <div class="flex rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 h-[340px]">
-          <div id="lineNumbers" class="code-gutter font-mono">${lines}</div>
-          <textarea oninput="updateLiveCode(this.value)" onscroll="document.getElementById('lineNumbers').scrollTop=this.scrollTop" class="code-input flex-1 bg-slate-950 text-emerald-300 font-mono p-3.5 focus:outline-none">${val.replace(/</g, "&lt;")}</textarea>
-        </div>
-      </div>
-      <div class="wevlo-card p-4 flex flex-col">
-        <span class="text-xs font-bold text-muted mb-2 uppercase">Live Preview</span>
-        <iframe id="editorIframe" class="w-full flex-1 min-h-[340px] rounded-2xl border border-soft bg-white" srcdoc="${doc.replace(/"/g, "&quot;")}"></iframe>
-      </div>
     </div>`;
 }
 
@@ -1042,35 +1023,6 @@ function renderWeb2App() {
     </div>`;
 }
 
-function renderGithubBuild() {
-  const repos = state.githubRepos.filter((r) => r.full_name.toLowerCase().includes(state.repoFilter.toLowerCase()));
-  return `
-    <div class="wevlo-card p-4 flex items-center justify-between text-xs font-bold">
-      <span class="text-purple-700">${state.githubToken ? "✓" : "1."} Connect GitHub</span><span>→</span>
-      <span class="${state.githubToken ? "text-purple-700" : "text-muted"}">2. Select Project</span><span>→</span>
-      <span class="text-muted">3. Code &amp; Build</span>
-    </div>
-    <div class="wevlo-card p-5 space-y-3 text-xs">
-      <div class="flex justify-between items-center"><h3 class="font-extrabold text-base flex items-center gap-2"><i data-lucide="github" class="w-5 h-5"></i> Connect Your GitHub Account</h3>${state.githubToken ? `<button onclick="confirmLogout()" class="border border-soft px-3 py-1 rounded-full font-bold">Disconnect</button>` : `<button onclick="loginWithGithub()" class="btn-purple px-4 py-2 rounded-full font-bold">Connect GitHub</button>`}</div>
-      ${state.githubToken ? `<p class="text-emerald-600 font-bold">✓ Connected as @${state.githubUser?.login}</p>` : `<p class="text-muted">Sign in with GitHub to create/select a Gradle Android repository.</p>`}
-    </div>
-    <div class="wevlo-card p-5 space-y-3 text-xs">
-      <h3 class="font-extrabold text-base">Select or Create Java Android Project</h3>
-      <select id="ghRepoSelect" onchange="state.selectedGhRepo=this.value" class="w-full border border-soft rounded-xl px-3 py-2 font-semibold bg-transparent"><option value="">-- Create New Repository Below --</option>${repos.map((r) => `<option value="${r.full_name}" ${state.selectedGhRepo === r.full_name ? "selected" : ""}>${r.full_name}</option>`).join("")}</select>
-      <div class="flex flex-wrap gap-2"><button onclick="loadGithubRepos().then(()=>render())" class="border border-soft px-3 py-1.5 rounded-full font-bold">↻ Refresh</button><button onclick="importExistingKey()" class="border border-soft px-3 py-1.5 rounded-full font-bold">Create signing keystore</button></div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2"><input value="${state.repoFilter}" oninput="state.repoFilter=this.value;render()" placeholder="Filter repositories..." class="border border-soft rounded-xl px-3 py-2 bg-transparent" /><input value="${state.ghBranch}" oninput="state.ghBranch=this.value" placeholder="Branch (main)" class="border border-soft rounded-xl px-3 py-2 bg-transparent" /></div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2"><input id="ghNewRepoName" placeholder="New Repo Name" class="border border-soft rounded-xl px-3 py-2 bg-transparent" /><input id="ghAppName" value="Wevlo Java App" class="border border-soft rounded-xl px-3 py-2 bg-transparent" /><input id="ghPkgName" value="com.wevlo.javaapp" class="border border-soft rounded-xl px-3 py-2 bg-transparent" /></div>
-      <textarea rows="10" oninput="state.ghJavaCode=this.value" class="w-full bg-slate-950 text-emerald-300 font-mono text-xs p-3.5 rounded-2xl">${state.ghJavaCode}</textarea>
-      <button onclick="startGithubJavaBuild()" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">Open in Editor &amp; Build APK / AAB →</button>
-      <div id="ghBuildLog" class="hidden border border-soft rounded-2xl p-4"></div>
-    </div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-      <div class="wevlo-card p-5 space-y-1"><h4 class="font-extrabold text-sm">⚡ Build with Confidence</h4><p>✓ Connect GitHub Repository</p><p>✓ Edit code in built-in IDE</p><p>✓ Build with Gradle on GitHub Actions</p><p>✓ Download AAB &amp; APK</p></div>
-      <div class="wevlo-card p-5 space-y-2"><h4 class="font-extrabold text-sm">🔨 What is Gradle?</h4><p class="text-muted">Gradle builds Android projects on GitHub Actions, just like Android Studio on a computer.</p><button onclick="navigate('#/docs')" class="border border-soft px-4 py-1.5 rounded-full font-bold">Learn More →</button></div>
-    </div>
-    <div class="btn-purple rounded-[22px] p-5 text-center"><p class="font-extrabold text-sm">Fast • Secure • Reliable</p><p class="text-xs opacity-90">Build your Android app in minutes with Wevlo.</p></div>`;
-}
-
 function renderWallet() {
   const w = state.wallet;
   return `
@@ -1090,7 +1042,7 @@ function renderTemplates() {
     { name: "E-Commerce Store", color: "from-emerald-500 to-teal-600", badge: "Popular" },
     { name: "News & Blog App", color: "from-sky-500 to-blue-600", badge: "WebView" }
   ];
-  return `<h1 class="text-xl font-extrabold">Templates</h1><div class="grid grid-cols-1 md:grid-cols-3 gap-4">${list.map((t) => `<div class="wevlo-card overflow-hidden"><div class="h-32 bg-gradient-to-br ${t.color} p-4 flex flex-col justify-between text-white"><span class="self-start text-[10px] font-bold bg-white/20 px-2.5 py-0.5 rounded-full">${t.badge}</span><div class="bg-white/15 backdrop-blur-xs rounded-xl p-2 text-xs font-bold">${t.name} Preview</div></div><div class="p-4 space-y-3"><h3 class="font-bold text-sm">${t.name}</h3><button onclick="cloneTemplate('${t.name}')" class="w-full btn-purple py-2 rounded-full text-xs font-bold">Use Template</button></div></div>`).join("")}</div>`;
+  return `<h1 class="text-xl font-extrabold">Templates</h1><div class="grid grid-cols-1 md:grid-cols-3 gap-4">${list.map((t) => `<div class="wevlo-card overflow-hidden"><div class="h-32 bg-gradient-to-br ${t.color} p-4 flex flex-col justify-between text-white"><span class="self-start text-[10px] font-bold bg-white/20 px-2.5 py-0.5 rounded-full">${t.badge}</span><div class="bg-white/15 backdrop-blur-sm rounded-xl p-2 text-xs font-bold">${t.name} Preview</div></div><div class="p-4 space-y-3"><h3 class="font-bold text-sm">${t.name}</h3><button onclick="cloneTemplate('${t.name}')" class="w-full btn-purple py-2 rounded-full text-xs font-bold">Use Template</button></div></div>`).join("")}</div>`;
 }
 
 function renderPreview() {
@@ -1107,7 +1059,7 @@ function renderSettings() {
     <div class="wevlo-card p-5 space-y-4 text-xs">
       <h1 class="text-xl font-extrabold">Settings &amp; Profile</h1>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><label class="font-bold text-muted">Display Name</label><input value="${pr.name}" oninput="state.profile.name=this.value" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent" /></div>
+        <div><label class="font-bold text-muted">Display Name</label><input value="${pr.name}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent" /></div>
         <div><label class="font-bold text-muted">Default Package Prefix</label><input value="${pr.pkgPrefix}" oninput="state.profile.pkgPrefix=this.value" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent" /></div>
       </div>
       <div class="flex justify-between items-center"><b>Auto-save Editor Changes</b><label class="toggle-switch"><input type="checkbox" ${pr.autoSave ? "checked" : ""} onchange="state.profile.autoSave=this.checked"><span class="toggle-slider"></span></label></div>
@@ -1116,14 +1068,14 @@ function renderSettings() {
         <button onclick="saveUserProfile()" class="btn-purple px-5 py-2 rounded-full font-bold">Save Profile</button>
         <button onclick="loginWithGoogle()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect Gmail</button>
         <button onclick="loginWithGithub()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect GitHub</button>
+        <button onclick="confirmLogout()" class="border border-rose-300 text-rose-600 px-4 py-2 rounded-full font-bold">Remove / Sign Out</button>
       </div>
     </div>`;
 }
 
 // ======================================================
-// ৮. Global Action Bindings & Main Router
+// ৮. Global Action Bindings & Full-Screen Router
 // ======================================================
-window.switchActiveProject = (id) => { state.activeProjectId = id; saveProjects(); window.render(); };
 window.openProjectInEditor = (id) => { state.activeProjectId = id; saveProjects(); window.navigate("#/editor"); };
 window.openProjectInPreview = (id) => { state.activeProjectId = id; saveProjects(); window.navigate("#/preview"); };
 window.openProjectInBuild = (id) => { state.activeProjectId = id; saveProjects(); window.navigate("#/build"); };
@@ -1139,16 +1091,6 @@ window.confirmDeleteProject = (id) =>
       window.showToast("Project deleted", "info");
     }
   });
-
-window.updateLiveCode = (v) => {
-  const p = getActiveProject();
-  if (!p) return;
-  p[state.editorTab] = v;
-  if (state.profile.autoSave) saveProjects();
-  const g = document.getElementById("lineNumbers");
-  if (g) g.innerHTML = Array.from({ length: Math.max(v.split("\n").length, 16) }, (_, i) => `<div>${i + 1}</div>`).join("");
-  document.getElementById("editorIframe").srcdoc = `<!DOCTYPE html><html><head><style>${p.css}</style></head><body>${p.html}<script>${p.js}<\/script></body></html>`;
-};
 
 window.updateW2A = (k, v) => {
   state.web2app[k] = v;
@@ -1211,19 +1153,6 @@ public class MainActivity extends Activity {
     orientation: w.orientation,
     javaSource,
     logElId: "w2aLog"
-  });
-};
-
-window.startGithubJavaBuild = () => {
-  const existing = document.getElementById("ghRepoSelect").value;
-  const newName = document.getElementById("ghNewRepoName").value.trim() || "wevlo-java-" + Math.floor(Math.random() * 900 + 100);
-  runGithubApkPipeline({
-    repoName: newName,
-    existingFullRepo: existing || null,
-    appName: document.getElementById("ghAppName").value.trim(),
-    pkgName: document.getElementById("ghPkgName").value.trim(),
-    javaSource: state.ghJavaCode,
-    logElId: "ghBuildLog"
   });
 };
 
@@ -1312,6 +1241,23 @@ window.saveUserProfile = () => {
 window.state = state;
 window.render = function render() {
   renderHeaderAndNav();
+
+  // Full-screen IDE mode toggles outer header/sidebar/bottom-nav automatically
+  const isFullIde =
+    (state.route === "#/editor" && !!getActiveProject()) ||
+    (state.route === "#/github-build" && !!state.ghIdeOpen && !!state.selectedGhRepo);
+
+  const headerEl = document.querySelector("header");
+  const sidebarEl = document.getElementById("sidebar");
+  const bnavEl = document.querySelector("nav.fixed");
+  const c = document.getElementById("appContent");
+
+  if (headerEl) headerEl.classList.toggle("hidden", isFullIde);
+  if (sidebarEl) sidebarEl.classList.toggle("lg:hidden", isFullIde);
+  if (bnavEl) bnavEl.classList.toggle("hidden", isFullIde);
+  if (c?.parentElement) c.parentElement.className = isFullIde ? "flex-1 flex flex-col min-w-0" : "flex-1 flex flex-col min-w-0 pb-24 lg:pb-8";
+  if (c) c.className = isFullIde ? "w-full min-h-screen p-0" : "max-w-5xl w-full mx-auto px-4 py-5 space-y-5";
+
   const extraHtml = renderExtraPages({
     state,
     saveProjects,
@@ -1321,21 +1267,58 @@ window.render = function render() {
     addActivity,
     openConfirmModal
   });
-  const c = document.getElementById("appContent");
+
   if (extraHtml) {
     c.innerHTML = extraHtml;
   } else {
     switch (state.route) {
-      case "#/projects": c.innerHTML = renderProjects(); break;
-      case "#/editor": c.innerHTML = renderEditor(); break;
-      case "#/build": c.innerHTML = renderBuildApk(); break;
-      case "#/web2app": c.innerHTML = renderWeb2App(); break;
-      case "#/github-build": c.innerHTML = renderGithubBuild(); break;
-      case "#/wallet": c.innerHTML = renderWallet(); break;
-      case "#/templates": c.innerHTML = renderTemplates(); break;
-      case "#/preview": c.innerHTML = renderPreview(); break;
-      case "#/settings": c.innerHTML = renderSettings(); break;
-      default: c.innerHTML = renderDashboard();
+      case "#/projects":
+        c.innerHTML = renderProjects();
+        break;
+      case "#/editor":
+        c.innerHTML = renderProCodeEditor({
+          state,
+          saveProjects,
+          navigate: window.navigate,
+          showToast: window.showToast,
+          render: window.render,
+          openNewProjectModal: window.openNewProjectModal
+        });
+        break;
+      case "#/build":
+        c.innerHTML = renderBuildApk();
+        break;
+      case "#/web2app":
+        c.innerHTML = renderWeb2App();
+        break;
+      case "#/github-build":
+        c.innerHTML = renderProGithubBuild({
+          state,
+          ghFetch,
+          runGithubApkPipeline,
+          showToast: window.showToast,
+          render: window.render,
+          navigate: window.navigate,
+          confirmLogout: window.confirmLogout,
+          loginWithGithub: window.loginWithGithub,
+          importExistingKey: window.importExistingKey,
+          loadGithubRepos: window.loadGithubRepos
+        });
+        break;
+      case "#/wallet":
+        c.innerHTML = renderWallet();
+        break;
+      case "#/templates":
+        c.innerHTML = renderTemplates();
+        break;
+      case "#/preview":
+        c.innerHTML = renderPreview();
+        break;
+      case "#/settings":
+        c.innerHTML = renderSettings();
+        break;
+      default:
+        c.innerHTML = renderDashboard();
     }
   }
   if (window.lucide) window.lucide.createIcons();
