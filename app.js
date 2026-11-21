@@ -11,19 +11,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { renderExtraPages } from "./pages-extra.js";
 import { renderProCodeEditor, renderProGithubBuild } from "./ide-editors.js";
-import {
-  initCloudFirestore,
-  renderAdminPanel,
-  isAdminUser,
-  checkFeatureAccess,
-  getActiveAdminPin,
-  DEFAULT_FEATURE_RULES,
-  DEFAULT_PAYMENT_CONFIG,
-  DEFAULT_MASTER_PIN
-} from "./admin-panel.js";
 
 // ======================================================
-// 1. Firebase Config
+// 1. Firebase Auth Config
 // ======================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBXUklgCWDOujtIuSZvW_VDnEVu6WKFrNA",
@@ -34,7 +24,8 @@ const firebaseConfig = {
   appId: "1:814010361703:web:7ae39494076f943b2a71c2"
 };
 
-let fbApp = null, auth = null;
+let fbApp = null;
+let auth = null;
 try {
   fbApp = initializeApp(firebaseConfig);
   auth = getAuth(fbApp);
@@ -43,24 +34,16 @@ try {
 }
 
 // ======================================================
-// 2. Global State (With Persistent GitHub IDE Session)
+// 2. Global State (Personal Studio + Persistent GitHub Session)
 // ======================================================
 const savedProfile = JSON.parse(localStorage.getItem("wevlo_profile") || "null");
-if (savedProfile && savedProfile.name === "Wevlo Developer") {
-  savedProfile.name = "";
-  localStorage.setItem("wevlo_profile", JSON.stringify(savedProfile));
-}
 const savedGhSession = JSON.parse(localStorage.getItem("wevlo_gh_session") || "null");
 
 const state = {
   route: window.location.hash || "#/",
   theme: localStorage.getItem("wevlo_theme") || "light",
   user: null,
-  profile: savedProfile || { name: "", pkgPrefix: "com.wevlo", emailNotify: true, autoSave: true },
-  plan: localStorage.getItem("wevlo_plan") || "Free",
-  proExpiresAt: null,
-  featureRules: { ...DEFAULT_FEATURE_RULES },
-  paymentConfig: { ...DEFAULT_PAYMENT_CONFIG },
+  profile: savedProfile || { name: "", pkgPrefix: "com.wevlo" },
   githubToken: sessionStorage.getItem("wevlo_gh_token") || null,
   githubUser: JSON.parse(sessionStorage.getItem("wevlo_gh_user") || "null"),
   githubRepos: [],
@@ -72,47 +55,32 @@ const state = {
   ghManualFw: savedGhSession?.manualFw || null,
   ghIdeOpen: false,
   newRepoLang: "java",
-  ghJavaCode: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.widget.*;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) { super.onCreate(b); TextView t=new TextView(this); t.setText("Hello Wevlo!"); setContentView(t); }\n}`,
   projects: JSON.parse(localStorage.getItem("wevlo_projects") || "[]"),
   projSearch: "",
   activeProjectId: localStorage.getItem("wevlo_active_project") || null,
   activities: JSON.parse(localStorage.getItem("wevlo_activities") || "[]"),
   files: JSON.parse(localStorage.getItem("wevlo_files") || "[]"),
-  payments: JSON.parse(localStorage.getItem("wevlo_payments") || "[]"),
-  pushLogs: JSON.parse(localStorage.getItem("wevlo_push_logs") || "[]"),
   previewDevice: "phone",
   modalType: "html",
-  wallet: JSON.parse(localStorage.getItem("wevlo_wallet") || '{"balance":0,"deposited":0,"spent":0,"pending":0}'),
-  walletTab: "add",
-  payMethod: "bKash",
-  payAmount: 100,
-  depositFileName: "",
   buildConfig: {
-    buildType: "Debug",
     pkgName: "com.wevlo.app",
     versionName: "1.0.0",
-    versionCode: Number(localStorage.getItem("wevlo_ver_code") || 1),
     fullscreen: false,
     jsEnabled: true,
     domStorage: true,
     permCamera: false,
-    permLocation: false,
-    encryption: false,
-    appLock: false,
-    pushPro: false,
-    adsPro: false
+    permLocation: false
   },
   web2app: {
     url: "https://example.com",
-    appName: "My Awesome App",
+    appName: "My Web App",
     pkgName: "com.wevlo.webapp",
-    version: "1.0.0",
-    orientation: "Auto (Portrait & Landscape)"
+    fullscreen: false
   }
 };
 
 // ======================================================
-// 3. Helpers (Theme, Modals, Toast, Secret Trigger)
+// 3. Theme, Modals & Utility Helpers
 // ======================================================
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
@@ -154,58 +122,26 @@ function openConfirmModal({ title, message, onConfirm }) {
   m.classList.remove("hidden");
   m.classList.add("flex");
 }
+
 window.closeConfirmModal = () => {
   const m = document.getElementById("confirmModal");
   m.classList.add("hidden");
   m.classList.remove("flex");
 };
+
 document.getElementById("confirmOkBtn").addEventListener("click", () => {
   if (confirmCallback) confirmCallback();
   window.closeConfirmModal();
 });
 
+let toastTimer = null;
 window.showToast = (msg, type = "info") => {
   const t = document.getElementById("toast");
   t.textContent = msg;
   const bg = type === "error" ? "bg-rose-600" : type === "success" ? "bg-emerald-600" : "bg-slate-900";
   t.className = `fixed top-20 left-1/2 -translate-x-1/2 z-[60] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg max-w-[90vw] text-center ${bg}`;
-  setTimeout(() => t.classList.add("hidden"), 4000);
-};
-
-// Hidden 5-tap trigger on the Wevlo logo
-let logoTapCount = 0;
-let logoTapTimer = null;
-window.secretAdminTap = () => {
-  logoTapCount++;
-  clearTimeout(logoTapTimer);
-  logoTapTimer = setTimeout(() => {
-    logoTapCount = 0;
-  }, 2200);
-  if (logoTapCount >= 5) {
-    logoTapCount = 0;
-    if (isAdminUser(state)) return window.navigate("#/admin");
-    const m = document.getElementById("secretAccessModal");
-    if (m) {
-      document.getElementById("secretAccessInput").value = "";
-      m.classList.remove("hidden");
-      m.classList.add("flex");
-    }
-  }
-};
-
-window.submitSecretAdminPin = () => {
-  const val = document.getElementById("secretAccessInput")?.value.trim();
-  const activePin = getActiveAdminPin(state);
-  const m = document.getElementById("secretAccessModal");
-  if (m) {
-    m.classList.add("hidden");
-    m.classList.remove("flex");
-  }
-  if (val === activePin || val === DEFAULT_MASTER_PIN) {
-    sessionStorage.setItem("wevlo_admin_unlocked", "true");
-    window.navigate("#/admin");
-    window.showToast("Unlocked!", "success");
-  }
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add("hidden"), 3800);
 };
 
 window.resumeGithubIde = async () => {
@@ -213,34 +149,27 @@ window.resumeGithubIde = async () => {
   state.ghIdeOpen = true;
   window.navigate("#/github-build");
   if (!state.ghTreeFiles?.length && window.openGhVsCodeIde) {
-    await window.openGhVsCodeIde(state.selectedGhRepo);
+    await window.openGhVsCodeIde(state.selectedGhRepo, state.ghBranch || "main");
   }
 };
 
-initCloudFirestore(fbApp, {
-  state,
-  render: () => window.render(),
-  showToast: window.showToast,
-  navigate: (r) => window.navigate(r)
-});
-
 // ======================================================
-// 4. Firebase Auth + Popup-Free Fallback (Email & GitHub Token)
+// 4. Auth + Popup-Free Email & GitHub Token Connect
 // ======================================================
 function injectPopupFreeAuthUI() {
   const menuBox = document.querySelector("#accountMenu .space-y-2");
   if (menuBox && !document.getElementById("btnEmailLoginMenu")) {
     const emailBtn = document.createElement("button");
     emailBtn.id = "btnEmailLoginMenu";
-    emailBtn.className = "w-full flex items-center justify-center gap-2 border border-purple-400/50 bg-purple-500/10 text-purple-700 font-bold text-xs py-2.5 rounded-xl transition";
-    emailBtn.textContent = "Email / Password Login (No Popup)";
+    emailBtn.className = "w-full flex items-center justify-center gap-2 border border-violet-400/50 bg-violet-500/10 text-violet-700 font-bold text-xs py-2.5 rounded-xl transition";
+    emailBtn.textContent = "Email / Password (No Popup)";
     emailBtn.onclick = () => {
       document.getElementById("accountMenu")?.classList.add("hidden");
       window.openEmailAuthModal();
     };
     const ghPatBtn = document.createElement("button");
     ghPatBtn.id = "btnGhTokenMenu";
-    ghPatBtn.className = "w-full flex items-center justify-center gap-2 border border-soft hover:bg-purple-500/5 font-semibold text-xs py-2 rounded-xl transition";
+    ghPatBtn.className = "w-full flex items-center justify-center gap-2 border border-soft hover:bg-violet-500/5 font-semibold text-xs py-2 rounded-xl transition";
     ghPatBtn.textContent = "GitHub via Token (No Popup)";
     ghPatBtn.onclick = () => {
       document.getElementById("accountMenu")?.classList.add("hidden");
@@ -253,23 +182,23 @@ function injectPopupFreeAuthUI() {
   if (!document.getElementById("popupFreeAuthModal")) {
     const modal = document.createElement("div");
     modal.id = "popupFreeAuthModal";
-    modal.className = "fixed inset-0 z-[65] hidden items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4";
+    modal.className = "fixed inset-0 z-[65] hidden items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4";
     modal.innerHTML = `
       <div class="surface-card w-full max-w-sm rounded-[26px] p-6 space-y-4 shadow-2xl animate-slide-up text-xs">
         <div class="flex justify-between items-center">
           <h3 id="pfAuthTitle" class="text-base font-extrabold">Email / Password Login</h3>
-          <button onclick="document.getElementById('popupFreeAuthModal').classList.add('hidden'); document.getElementById('popupFreeAuthModal').classList.remove('flex')" class="p-1.5 rounded-full hover:bg-purple-500/10">✕</button>
+          <button onclick="document.getElementById('popupFreeAuthModal').classList.add('hidden'); document.getElementById('popupFreeAuthModal').classList.remove('flex')" class="p-1.5 rounded-full hover:bg-violet-500/10">✕</button>
         </div>
         <div id="pfEmailBox" class="space-y-3">
           <input id="pfEmailInp" type="email" placeholder="your@email.com" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent" />
           <input id="pfPassInp" type="password" placeholder="Password (min 6 chars)" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent" />
           <div class="grid grid-cols-2 gap-2">
             <button onclick="submitEmailAuth('login')" class="btn-purple py-2.5 rounded-full font-bold">Sign In</button>
-            <button onclick="submitEmailAuth('signup')" class="border border-purple-500 text-purple-700 py-2.5 rounded-full font-bold">Create Account</button>
+            <button onclick="submitEmailAuth('signup')" class="border border-violet-500 text-violet-700 py-2.5 rounded-full font-bold">Create Account</button>
           </div>
         </div>
         <div id="pfTokenBox" class="hidden space-y-3">
-          <p class="text-muted">Create a Personal Access Token (classic) in GitHub Settings → Developer settings with <b>repo</b> and <b>workflow</b> scopes:</p>
+          <p class="text-muted">Create a Personal Access Token (classic) in GitHub Settings → Developer settings with <b>repo</b> and <b>workflow</b> permissions:</p>
           <input id="pfGhPatInp" type="password" placeholder="ghp_xxxxxxxxxxxx" class="w-full border border-soft rounded-xl px-3.5 py-2.5 text-sm bg-transparent font-mono" />
           <button onclick="submitGhTokenConnect()" class="w-full btn-purple py-2.5 rounded-full font-bold">Connect GitHub</button>
         </div>
@@ -280,7 +209,7 @@ function injectPopupFreeAuthUI() {
 
 window.openEmailAuthModal = () => {
   injectPopupFreeAuthUI();
-  document.getElementById("pfAuthTitle").textContent = "Email / Password (No Popup)";
+  document.getElementById("pfAuthTitle").textContent = "Email / Password Login";
   document.getElementById("pfEmailBox").classList.remove("hidden");
   document.getElementById("pfTokenBox").classList.add("hidden");
   const m = document.getElementById("popupFreeAuthModal");
@@ -302,17 +231,17 @@ window.submitEmailAuth = async (mode) => {
   const email = document.getElementById("pfEmailInp")?.value.trim();
   const pass = document.getElementById("pfPassInp")?.value;
   if (!email || !pass || pass.length < 6) {
-    return window.showToast("Enter a valid email and a password of at least 6 characters!", "error");
+    return window.showToast("Enter a valid email and at least 6 characters password!", "error");
   }
   try {
     if (mode === "signup") await createUserWithEmailAndPassword(auth, email, pass);
     else await signInWithEmailAndPassword(auth, email, pass);
-    document.getElementById("popupFreeAuthModal").classList.add("hidden");
-    window.showToast("Signed in successfully!", "success");
+    const m = document.getElementById("popupFreeAuthModal");
+    m.classList.add("hidden");
+    m.classList.remove("flex");
+    window.showToast("Signed in!", "success");
   } catch (e) {
-    if (e.code === "auth/user-disabled") window.showToast("This account is disabled in Firebase Console. Enable it in the Users tab.", "error");
-    else if (e.code === "auth/operation-not-allowed") window.showToast("Enable Email/Password in Firebase Console → Sign-in method!", "error");
-    else window.showToast(e.message, "error");
+    window.showToast(e.message, "error");
   }
 };
 
@@ -326,7 +255,9 @@ window.submitGhTokenConnect = async () => {
     sessionStorage.setItem("wevlo_gh_token", tok);
     sessionStorage.setItem("wevlo_gh_user", JSON.stringify(u));
     await window.loadGithubRepos();
-    document.getElementById("popupFreeAuthModal").classList.add("hidden");
+    const m = document.getElementById("popupFreeAuthModal");
+    m.classList.add("hidden");
+    m.classList.remove("flex");
     updateAccountUI();
     window.render();
     window.showToast(`GitHub Connected: @${u.login}`, "success");
@@ -340,7 +271,6 @@ if (auth) {
   onAuthStateChanged(auth, (u) => {
     state.user = u;
     updateAccountUI();
-    window.syncCloudUser?.(u);
     window.render();
   });
 }
@@ -364,8 +294,8 @@ function updateAccountUI() {
     btnLogout.classList.remove("hidden");
   } else {
     av.textContent = "W";
-    accName.textContent = "Not Signed In";
-    accEmail.textContent = "Sign in with Email, Gmail or GitHub";
+    accName.textContent = "Personal Studio";
+    accEmail.textContent = "Connect GitHub or Google";
     btnLogout.classList.add("hidden");
   }
   document.getElementById("ghMenuLabel").textContent = state.githubToken ? `GitHub: @${state.githubUser?.login || "Connected"}` : "Connect GitHub Account";
@@ -380,13 +310,11 @@ window.loginWithGoogle = async () => {
   p.setCustomParameters({ prompt: "select_account" });
   try {
     await signInWithPopup(auth, p);
-    window.showToast("Gmail signed in successfully!", "success");
+    window.showToast("Google signed in!", "success");
     document.getElementById("accountMenu").classList.add("hidden");
   } catch (e) {
-    if (e.code === "auth/user-disabled") {
-      window.showToast("This Gmail account is disabled in Firebase Console. Enable it in Users.", "error");
-    } else if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
-      window.showToast("Popup blocked on mobile! Use Email/Password login instead.", "error");
+    if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
+      window.showToast("Popup blocked! Use Email/Password login.", "error");
       window.openEmailAuthModal();
     } else {
       window.showToast(e.message, "error");
@@ -418,7 +346,7 @@ window.loginWithGithub = async () => {
     document.getElementById("accountMenu").classList.add("hidden");
   } catch (e) {
     if (e.code === "auth/popup-closed-by-user" || e.code === "auth/popup-blocked") {
-      window.showToast("GitHub popup blocked! Connect using a Personal Access Token.", "error");
+      window.showToast("GitHub popup blocked! Connect using a Token.", "error");
       window.openGhTokenModal();
     } else {
       window.showToast(e.message, "error");
@@ -430,28 +358,25 @@ window.loginWithGithub = async () => {
 
 window.confirmLogout = () =>
   openConfirmModal({
-    title: "Remove / Sign Out Account?",
-    message: "Sign out and clear cached Gmail & GitHub session?",
+    title: "Disconnect Accounts?",
+    message: "Sign out and clear cached GitHub & Google session?",
     onConfirm: async () => {
       try {
         if (auth) await signOut(auth);
-        if (window.indexedDB) indexedDB.deleteDatabase("firebaseLocalStorageDb");
       } catch {}
       state.user = null;
-      state.plan = "Free";
       state.githubToken = null;
       state.githubUser = null;
       state.githubRepos = [];
       state.ghIdeOpen = false;
       state.selectedGhRepo = "";
+      state._loadedIdeRepo = "";
       sessionStorage.clear();
-      localStorage.removeItem("wevlo_profile");
       localStorage.removeItem("wevlo_gh_session");
-      state.profile.name = "";
       document.getElementById("accountMenu").classList.add("hidden");
       updateAccountUI();
       window.render();
-      window.showToast("Signed out!", "info");
+      window.showToast("Disconnected!", "info");
     }
   });
 
@@ -460,72 +385,67 @@ window.confirmLogout = () =>
 // ======================================================
 const sidebarMenu = [
   { route: "#/", label: "Dashboard", icon: "home" },
+  { route: "#/github-build", label: "GitHub IDE", icon: "github" },
   { route: "#/projects", label: "My Projects", icon: "folder" },
-  { route: "#/templates", label: "Templates", icon: "layout-grid", fkey: "templates" },
-  { route: "#/web2app", label: "Website to App", icon: "globe", fkey: "web2app" },
-  { route: "#/editor", label: "Code Editor", icon: "code-2", fkey: "codeEditor" },
-  { route: "#/build", label: "Build APK", icon: "smartphone", fkey: "buildApk" },
-  { route: "#/github-build", label: "GitHub Build", icon: "github", fkey: "githubBuild" },
-  { route: "#/preview", label: "Preview", icon: "eye", fkey: "preview" },
-  { route: "#/wallet", label: "Wallet", icon: "wallet" },
-  { route: "#/subscription", label: "Subscription", icon: "crown" },
-  { route: "#/payments", label: "Payments", icon: "receipt" },
-  { route: "#/push", label: "Push Notifications", icon: "bell-ring", fkey: "proPush" },
-  { route: "#/lab", label: "Lab", icon: "flask-conical", fkey: "lab" },
-  { route: "#/files", label: "File Manager", icon: "folder-open", fkey: "fileManager" },
-  { route: "#/icons", label: "Icon Library", icon: "shapes", fkey: "iconLibrary" },
-  { route: "#/secure-converter", label: "Secure Converter", icon: "shield-alert", fkey: "secureConverter" },
+  { route: "#/editor", label: "Web Editor", icon: "code-2" },
+  { route: "#/web2app", label: "Website to App", icon: "globe" },
+  { route: "#/build", label: "Build APK", icon: "smartphone" },
+  { route: "#/preview", label: "Device Preview", icon: "eye" },
+  { route: "#/templates", label: "Templates", icon: "layout-grid" },
+  { route: "#/lab", label: "Starter Lab", icon: "flask-conical" },
+  { route: "#/files", label: "File Manager", icon: "folder-open" },
+  { route: "#/icons", label: "Icon Library", icon: "shapes" },
+  { route: "#/secure-converter", label: "Secure Converter", icon: "shield-check" },
   { route: "#/docs", label: "Documentation", icon: "book-open" },
-  { route: "#/privacy", label: "Privacy Policy", icon: "shield" },
-  { route: "#/support", label: "Support", icon: "headphones" }
+  { route: "#/settings", label: "Settings", icon: "settings" }
 ];
-const pageTitles = Object.fromEntries(sidebarMenu.map((i) => [i.route, i.label]).concat([["#/settings", "Settings & Profile"]]));
+const pageTitles = Object.fromEntries(sidebarMenu.map((i) => [i.route, i.label]));
 
 window.navigate = (r) => {
   state.route = r;
-  window.location.hash = r;
+  if (window.location.hash !== r) window.location.hash = r;
   window.toggleDrawer(false);
   window.render();
   window.scrollTo({ top: 0, behavior: "smooth" });
 };
+
 window.addEventListener("hashchange", () => {
-  state.route = window.location.hash || "#/";
-  window.render();
+  const next = window.location.hash || "#/";
+  if (state.route !== next) {
+    state.route = next;
+    window.render();
+  }
 });
+
 window.toggleDrawer = (open) => {
   document.getElementById("sidebar").classList.toggle("-translate-x-full", !open);
   document.getElementById("drawerOverlay").classList.toggle("hidden", !open);
 };
+
 window.toggleAccountMenu = () => document.getElementById("accountMenu").classList.toggle("hidden");
 
 function renderHeaderAndNav() {
-  const adminBtn = isAdminUser(state)
-    ? `<button onclick="navigate('#/admin')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl mb-2 ${state.route === "#/admin" ? "btn-purple font-bold" : "bg-purple-50 text-purple-800 font-bold"}"><span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4"></i> Control Panel</span><span class="pro-badge">SYS</span></button>`
-    : "";
-
   const resumeBtn =
     state.githubToken && state.selectedGhRepo
-      ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-purple-600/15 text-purple-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${state.selectedGhRepo.split("/")[1]}</span><span>→</span></button>`
+      ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-violet-600/15 text-violet-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${state.selectedGhRepo.split("/")[1]}</span><span>→</span></button>`
       : "";
 
   document.getElementById("sidebarNav").innerHTML =
-    adminBtn +
     resumeBtn +
     sidebarMenu
       .map((item) => {
-        const mode = item.fkey ? state.featureRules?.[item.fkey] || "free" : "free";
-        const badge = mode === "pro" ? `<span class="pro-badge">PRO</span>` : mode === "off" ? `<span class="text-[9px] bg-rose-100 text-rose-600 px-1.5 rounded-full font-bold">OFF</span>` : "";
-        return `<button onclick="navigate('${item.route}')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl transition ${state.route === item.route ? "bg-purple-50 text-purple-700 font-bold" : "text-muted hover:bg-purple-500/5"}"><span class="flex items-center gap-3"><i data-lucide="${item.icon}" class="w-4 h-4"></i><span>${item.label}</span></span>${badge}</button>`;
+        const active = state.route === item.route;
+        return `<button onclick="navigate('${item.route}')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition ${active ? "bg-violet-500/15 text-violet-700 font-bold" : "text-muted hover:bg-violet-500/5"}"><i data-lucide="${item.icon}" class="w-4 h-4"></i><span>${item.label}</span></button>`;
       })
       .join("");
 
   document.querySelectorAll(".bnav-item").forEach((b) => b.classList.toggle("active", b.dataset.bnav === state.route));
-  const subpages = ["#/build", "#/github-build", "#/subscription", "#/payments", "#/push", "#/lab", "#/files", "#/icons", "#/secure-converter", "#/docs", "#/privacy", "#/support", "#/admin"];
+  const subpages = ["#/build", "#/github-build", "#/lab", "#/files", "#/icons", "#/secure-converter", "#/docs", "#/privacy"];
   const hl = document.getElementById("headerLeft");
-  const curTitle = state.route === "#/admin" && isAdminUser(state) ? "Control Center" : pageTitles[state.route] || "Wevlo";
+  const curTitle = pageTitles[state.route] || "Wevlo Studio";
   hl.innerHTML = subpages.includes(state.route)
     ? `<button onclick="navigate('#/')" class="w-9 h-9 rounded-full surface-card flex items-center justify-center"><i data-lucide="arrow-left" class="w-4 h-4"></i></button><span class="font-extrabold text-lg">${curTitle}</span>`
-    : `<button onclick="toggleDrawer(true)" class="lg:hidden p-2 -ml-2 rounded-xl"><i data-lucide="menu" class="w-5 h-5"></i></button><a href="#/" onclick="navigate('#/'); secretAdminTap()" class="flex items-center gap-1 lg:hidden"><svg width="26" height="20" viewBox="0 0 36 28" fill="none"><path d="M3 5L10.5 22L18 9L25.5 22L33 5" stroke="url(#wGrad)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-lg font-extrabold">evlo</span></a><span class="hidden lg:inline-block font-bold text-base">${curTitle}</span>`;
+    : `<button onclick="toggleDrawer(true)" class="lg:hidden p-2 -ml-2 rounded-xl"><i data-lucide="menu" class="w-5 h-5"></i></button><a href="#/" onclick="navigate('#/'); return false;" class="flex items-center gap-1.5 lg:hidden"><span class="w-7 h-7 rounded-lg icon-box-purple flex items-center justify-center"><svg width="16" height="12" viewBox="0 0 36 28" fill="none"><path d="M3 5L10.5 22L18 9L25.5 22L33 5" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-lg font-extrabold">Wevlo</span></a><span class="hidden lg:inline-block font-bold text-base">${curTitle}</span>`;
 }
 
 window.openNewProjectModal = (type = "html") => {
@@ -535,15 +455,18 @@ window.openNewProjectModal = (type = "html") => {
   m.classList.remove("hidden");
   m.classList.add("flex");
 };
+
 window.closeNewProjectModal = () => {
   const m = document.getElementById("newProjectModal");
   m.classList.add("hidden");
   m.classList.remove("flex");
 };
+
 window.selectModalType = (t) => {
   state.modalType = t;
   document.querySelectorAll(".ptype-card").forEach((c) => c.classList.toggle("active", c.dataset.ptype === t));
 };
+
 window.confirmCreateProject = () => {
   const name = document.getElementById("modalProjName").value.trim() || `Project ${state.projects.length + 1}`;
   state.projects.unshift({
@@ -564,13 +487,14 @@ window.confirmCreateProject = () => {
 };
 
 // ======================================================
-// 6. GitHub REST API & APK Pipeline
+// 6. GitHub REST API & Web2App / HTML APK Pipeline
 // ======================================================
 function toBase64(str) {
   let bin = "";
-  new TextEncoder().encode(str).forEach((b) => (bin += String.fromCharCode(b)));
+  new TextEncoder().encode(str || "").forEach((b) => (bin += String.fromCharCode(b)));
   return btoa(bin);
 }
+
 async function ghFetch(path, options = {}) {
   const res = await fetch("https://api.github.com" + path, {
     ...options,
@@ -585,119 +509,138 @@ async function ghFetch(path, options = {}) {
   if (!res.ok) throw new Error(data.message || `GitHub Error (${res.status})`);
   return data;
 }
+
 window.loadGithubRepos = async () => {
-  if (state.githubToken) {
-    try {
-      state.githubRepos = await ghFetch("/user/repos?sort=updated&per_page=30");
-    } catch {}
+  if (!state.githubToken) return;
+  try {
+    state.githubRepos = await ghFetch("/user/repos?sort=updated&per_page=50");
+  } catch {}
+};
+
+window.downloadPipelineApk = async (apiUrl, fileName, browserUrl) => {
+  try {
+    window.showToast("Downloading " + fileName + "...", "info");
+    const res = await fetch(apiUrl, { headers: { Authorization: "Bearer " + state.githubToken, Accept: "application/octet-stream" } });
+    if (!res.ok) throw new Error();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = fileName;
+    a.click();
+  } catch {
+    window.open(browserUrl, "_blank");
   }
 };
 
 async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, logElId }) {
   const logEl = document.getElementById(logElId);
   logEl.classList.remove("hidden");
-  logEl.innerHTML = `<div class="flex items-center gap-2 font-bold mb-2"><span class="spinner"></span><span id="${logElId}_t">Building...</span></div><div id="${logElId}_l" class="space-y-1"></div>`;
+  logEl.innerHTML = `<div class="flex items-center gap-2 font-bold mb-2"><span class="spinner"></span><span>Building APK on GitHub Actions...</span></div><div id="${logElId}_l" class="space-y-1"></div>`;
   const logs = document.getElementById(`${logElId}_l`);
   if (!state.githubToken) return (logs.innerHTML = `<span class="text-rose-600 font-bold">Please connect GitHub first!</span>`);
+
+  const safeRepo = (repoName || "wevlo-app").trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "-") + "-" + Math.floor(Math.random() * 900 + 100);
   try {
     const owner = state.githubUser?.login || (await ghFetch("/user")).login;
-    const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: repoName, private: false, auto_init: true }) });
+    const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: safeRepo, private: true, auto_init: true }) });
     const branch = r.default_branch || "main";
     const pkgPath = pkgName.replace(/\./g, "/");
     const files = [
-      { path: "settings.gradle", content: `pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}\ndependencyResolutionManagement{repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS);repositories{google();mavenCentral()}}\nrootProject.name="Wevlo"\ninclude ':app'\n` },
+      { path: "settings.gradle", content: `pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}\ndependencyResolutionManagement{repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS);repositories{google();mavenCentral()}}\nrootProject.name="WevloApp"\ninclude ':app'\n` },
       { path: "build.gradle", content: `plugins{id 'com.android.application' version '8.5.2' apply false}\n` },
       { path: "gradle.properties", content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.nonTransitiveRClass=true\n` },
       { path: "app/build.gradle", content: `plugins{id 'com.android.application'}\nandroid{namespace '${pkgName}';compileSdk 34;defaultConfig{applicationId "${pkgName}";minSdk 24;targetSdk 34;versionCode 1;versionName "1.0"};compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}}\n` },
       { path: "app/src/main/AndroidManifest.xml", content: `<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><application android:label="${appName}" android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>` },
       { path: `app/src/main/java/${pkgPath}/MainActivity.java`, content: `package ${pkgName};\n${javaSource}` },
-      { path: ".github/workflows/wevlo-build.yml", content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - uses: softprops/action-gh-release@v2\n        with:\n          tag_name: "v1-\${{ github.run_number }}"\n          fail_on_unmatched_files: false\n          files: "app/build/outputs/apk/debug/app-debug.apk"\n` }
+      {
+        path: ".github/workflows/wevlo-build.yml",
+        content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v6\n      - uses: actions/setup-java@v5\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v6\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - name: Publish Release\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          shopt -s nullglob globstar\n          FILES=(app/build/outputs/apk/**/*.apk)\n          if [ \${#FILES[@]} -gt 0 ]; then\n            gh release create "v1-\${{ github.run_number }}" "\${FILES[@]}" --title "v1-\${{ github.run_number }}" --notes "Built with Wevlo"\n          fi\n`
+      }
     ];
     for (const f of files) {
-      await ghFetch(`/repos/${owner}/${repoName}/contents/${f.path}`, {
+      await ghFetch(`/repos/${owner}/${safeRepo}/contents/${f.path}`, {
         method: "PUT",
         body: JSON.stringify({ message: `Add ${f.path}`, content: toBase64(f.content), branch })
       });
     }
-    logs.innerHTML += `<div>• Building on GitHub Actions...</div>`;
-    const timer = setInterval(async () => {
+    logs.innerHTML += `<div>• Repository <b>${owner}/${safeRepo}</b> created. Building APK...</div>`;
+    clearInterval(window.__wevloPipelineTimer);
+    window.__wevloPipelineTimer = setInterval(async () => {
       try {
-        const latest = (await ghFetch(`/repos/${owner}/${repoName}/actions/runs`)).workflow_runs?.[0];
+        const latest = (await ghFetch(`/repos/${owner}/${safeRepo}/actions/runs?per_page=1`)).workflow_runs?.[0];
         if (latest?.status === "completed") {
-          clearInterval(timer);
+          clearInterval(window.__wevloPipelineTimer);
           if (latest.conclusion === "success") {
-            const apk = (await ghFetch(`/repos/${owner}/${repoName}/releases/latest`)).assets?.find((a) => a.name.endsWith(".apk"));
+            const apk = (await ghFetch(`/repos/${owner}/${safeRepo}/releases/latest`)).assets?.find((a) => a.name.endsWith(".apk"));
             if (apk) {
-              logs.innerHTML += `<div class="mt-2"><a href="${apk.browser_download_url}" class="btn-purple px-4 py-2 rounded-full text-xs font-bold inline-block">Download APK (${(apk.size / 1048576).toFixed(2)} MB)</a></div>`;
+              logs.innerHTML += `<div class="mt-2"><button onclick="downloadPipelineApk('${apk.url}','${apk.name}','${apk.browser_download_url}')" class="btn-purple px-4 py-2 rounded-full text-xs font-bold inline-block">⬇ Download APK (${(apk.size / 1048576).toFixed(2)} MB)</button></div>`;
             }
           } else {
-            logs.innerHTML += `<div class="text-rose-600 font-bold">Failed (${latest.conclusion})</div>`;
+            logs.innerHTML += `<div class="text-rose-600 font-bold">Build Failed (${latest.conclusion}) — <a class="underline" target="_blank" href="${latest.html_url}">View Logs ↗</a></div>`;
           }
         }
       } catch {}
     }, 7000);
   } catch (e) {
-    logs.innerHTML += `<div class="text-rose-600">${e.message}</div>`;
+    logs.innerHTML += `<div class="text-rose-600 font-bold">${e.message}</div>`;
   }
 }
 
 // ======================================================
-// 7. Core Screens & Feature Lock Screen
+// 7. Personal Studio Pages
 // ======================================================
-function renderFeatureLocked(label, mode) {
-  if (mode === "off") {
-    return `<div class="wevlo-card p-8 text-center space-y-3"><i data-lucide="slash" class="w-10 h-10 mx-auto text-rose-500"></i><h2 class="text-lg font-extrabold">${label} Temporarily Unavailable</h2><p class="text-xs text-muted">This feature is currently disabled for maintenance.</p></div>`;
-  }
-  return `<div class="wevlo-card p-8 text-center space-y-4"><span class="pro-badge">PRO FEATURE</span><h2 class="text-xl font-extrabold">${label} is for Pro Users</h2><p class="text-xs text-muted">Upgrade your account to Wevlo Pro to unlock this feature.</p><button onclick="navigate('#/subscription')" class="btn-purple px-6 py-3 rounded-full text-xs font-bold">Upgrade to Wevlo Pro →</button></div>`;
-}
-
 function renderDashboard() {
   const c = state.projects.length;
+  const repoCount = (state.githubRepos || []).length;
   const langCards = [
-    ["java", "langJava", "☕ Java", "Android Gradle"],
-    ["kotlin", "langKotlin", "🟣 Kotlin", "Modern Native"],
-    ["flutter", "langFlutter", "🐦 Flutter", "Dart Cross-App"],
-    ["capacitor", "langCapacitor", "⚡ Capacitor", "HTML/JS APK"],
-    ["python", "langPython", "🐍 Python", "Kivy Buildozer"]
+    ["java", "☕ Java", "Hello World Gradle"],
+    ["kotlin", "🟣 Kotlin", "Hello World Native"],
+    ["flutter", "🐦 Flutter", "Hello World Dart"],
+    ["capacitor", "⚡ Capacitor", "Hello World Web APK"],
+    ["python", "🐍 Python", "Hello World Kivy"]
   ];
   return `
-    ${isAdminUser(state) ? `<div class="wevlo-card p-4 bg-purple-600/10 border-purple-400 flex items-center justify-between"><span class="text-xs font-extrabold text-purple-700">🛡 Control Panel Active</span><button onclick="navigate('#/admin')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Open Control Panel →</button></div>` : ""}
+    ${state.githubToken && state.selectedGhRepo ? `<div class="wevlo-card p-4 border-violet-400/50 bg-violet-500/5 flex flex-wrap items-center justify-between gap-2"><span class="text-xs font-bold">⚡ Active GitHub IDE: <b class="text-violet-700">${state.selectedGhRepo}</b> (${state.ghBranch || "main"})</span><button onclick="resumeGithubIde()" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Open IDE →</button></div>` : ""}
 
-    ${state.githubToken && state.selectedGhRepo ? `<div class="wevlo-card p-4 border-purple-400/50 bg-purple-500/5 flex flex-wrap items-center justify-between gap-2"><span class="text-xs font-bold">⚡ Active App IDE: <b class="text-purple-700">${state.selectedGhRepo}</b></span><button onclick="resumeGithubIde()" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Resume IDE →</button></div>` : ""}
-
-    <div class="hero-lavender rounded-[24px] p-5 flex items-start justify-between gap-3">
+    <div class="hero-lavender rounded-[26px] p-6 flex items-start justify-between gap-3">
       <div>
-        <span class="inline-flex items-center gap-1 bg-white/80 text-purple-700 text-[11px] font-bold px-3 py-1 rounded-full mb-2.5"><i data-lucide="zap" class="w-3 h-3"></i> Welcome to Wevlo</span>
-        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Build Something <span class="text-purple-700">Amazing</span></h1>
+        <span class="inline-flex items-center gap-1.5 bg-white/80 text-violet-700 text-[11px] font-bold px-3 py-1 rounded-full mb-3"><i data-lucide="zap" class="w-3 h-3"></i> Personal Developer Studio</span>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Build Apps <span class="text-violet-700">Your Way</span></h1>
+        <p class="text-xs text-slate-600 mt-1">All languages and APK tools unlocked with zero limits.</p>
         <div class="flex flex-wrap gap-2.5 mt-4">
-          <button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold inline-flex items-center gap-1.5">Create New Project →</button>
-          <button onclick="navigate('#/github-build')" class="bg-white text-slate-900 border border-[#e3dff2] px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold inline-flex items-center gap-2"><i data-lucide="github" class="w-4 h-4"></i> GitHub Build</button>
+          <button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold inline-flex items-center gap-1.5">Create Web Project →</button>
+          <button onclick="navigate('#/github-build')" class="bg-white text-slate-900 border border-[#e3dff2] px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold inline-flex items-center gap-2"><i data-lucide="github" class="w-4 h-4"></i> Open GitHub IDE</button>
         </div>
       </div>
       <div class="icon-box-purple w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"><i data-lucide="rocket" class="w-6 h-6"></i></div>
     </div>
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-      <div class="wevlo-card p-4 flex items-center gap-3"><span class="w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center"><i data-lucide="folder" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">Total Projects</p><p class="text-xl font-extrabold">${c}</p></div></div>
-      <div class="wevlo-card p-4 flex items-center gap-3"><span class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><i data-lucide="download" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">Templates</p><p class="text-xl font-extrabold">0</p></div></div>
-      <div onclick="navigate('#/wallet')" class="wevlo-card p-4 flex items-center gap-3 cursor-pointer"><span class="w-11 h-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center"><i data-lucide="wallet" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">Wallet Balance</p><p class="text-xl font-extrabold">৳${state.wallet.balance}</p></div></div>
-      <div onclick="navigate('#/subscription')" class="wevlo-card p-4 flex items-center gap-3 cursor-pointer"><span class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center"><i data-lucide="crown" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">Current Plan</p><p class="text-lg font-extrabold">${state.plan}</p></div></div>
+      <div onclick="navigate('#/projects')" class="wevlo-card wevlo-card-hover p-4 flex items-center gap-3 cursor-pointer"><span class="w-11 h-11 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center"><i data-lucide="folder" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">Web Projects</p><p class="text-xl font-extrabold">${c}</p></div></div>
+      <div onclick="navigate('#/github-build')" class="wevlo-card wevlo-card-hover p-4 flex items-center gap-3 cursor-pointer"><span class="w-11 h-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center"><i data-lucide="github" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">GitHub Repos</p><p class="text-xl font-extrabold">${repoCount}</p></div></div>
+      <div onclick="navigate('#/files')" class="wevlo-card wevlo-card-hover p-4 flex items-center gap-3 cursor-pointer"><span class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><i data-lucide="file" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">Local Files</p><p class="text-xl font-extrabold">${state.files.length}</p></div></div>
+      <div onclick="navigate('#/settings')" class="wevlo-card wevlo-card-hover p-4 flex items-center gap-3 cursor-pointer"><span class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center"><i data-lucide="shield-check" class="w-5 h-5"></i></span><div><p class="text-xs text-muted">GitHub Status</p><p class="text-sm font-extrabold">${state.githubToken ? "Connected" : "Offline"}</p></div></div>
     </div>
 
     <div class="wevlo-card p-5">
-      <div class="flex items-center justify-between mb-3"><h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="cpu" class="w-5 h-5 text-purple-600"></i> Multi-Language App Studio</h2><span class="text-[11px] font-bold text-purple-600">5 Languages</span></div>
+      <div class="flex items-center justify-between mb-3"><h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="cpu" class="w-5 h-5 text-violet-600"></i> Multi-Language Hello World Studio</h2><span class="text-[11px] font-bold text-violet-600">5 Languages</span></div>
       <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
-        ${langCards.map(([id, fkey, title, sub]) => {
-          const m = state.featureRules?.[fkey] || "free";
-          return `<button onclick="openStudioLanguage('${id}')" class="p-3 rounded-2xl border border-soft hover:border-purple-500 text-left transition relative"><div class="flex justify-between items-center"><p class="font-extrabold text-sm">${title}</p>${m === "pro" ? '<span class="pro-badge">PRO</span>' : m === "off" ? '<span class="text-[9px] text-rose-500 font-bold">OFF</span>' : ""}</div><p class="text-[11px] text-muted mt-0.5">${sub}</p></button>`;
-        }).join("")}
+        ${langCards.map(([id, title, sub]) => `<button onclick="openStudioLanguage('${id}')" class="p-3 rounded-2xl border border-soft wevlo-card-hover text-left transition"><p class="font-extrabold text-sm">${title}</p><p class="text-[11px] text-muted mt-0.5">${sub}</p></button>`).join("")}
       </div>
     </div>
 
     <div class="wevlo-card p-5">
       <h2 class="font-bold text-base mb-4">⚡ Quick Actions</h2>
       <div class="grid grid-cols-4 gap-2.5">
-        ${[["Create Project", "rocket", "bg-purple-50 text-purple-600", "openNewProjectModal()"], ["Code Editor", "code-2", "bg-sky-50 text-sky-600", "navigate('#/editor')"], ["Upload Files", "upload", "bg-emerald-50 text-emerald-600", "navigate('#/files')"], ["Templates", "layout-grid", "bg-amber-50 text-amber-500", "navigate('#/templates')"], ["Build APK", "smartphone", "bg-rose-50 text-rose-500", "navigate('#/build')"], ["Preview", "eye", "bg-indigo-50 text-indigo-600", "navigate('#/preview')"], ["Wallet", "wallet", "bg-emerald-50 text-emerald-600", "navigate('#/wallet')"], ["Support", "headphones", "bg-sky-50 text-sky-600", "navigate('#/support')"]].map(([l, ic, bg, act]) => `<button onclick="${act}" class="border border-soft rounded-2xl p-3 flex flex-col items-center gap-2 hover:border-purple-400"><span class="w-10 h-10 rounded-xl ${bg} flex items-center justify-center"><i data-lucide="${ic}" class="w-5 h-5"></i></span><span class="text-[11px] font-bold text-center">${l}</span></button>`).join("")}
+        ${[
+          ["New Project", "rocket", "bg-violet-50 text-violet-600", "openNewProjectModal()"],
+          ["Web Editor", "code-2", "bg-sky-50 text-sky-600", "navigate('#/editor')"],
+          ["GitHub IDE", "github", "bg-slate-100 text-slate-800", "navigate('#/github-build')"],
+          ["Website to App", "globe", "bg-emerald-50 text-emerald-600", "navigate('#/web2app')"],
+          ["Build APK", "smartphone", "bg-rose-50 text-rose-500", "navigate('#/build')"],
+          ["Preview", "eye", "bg-indigo-50 text-indigo-600", "navigate('#/preview')"],
+          ["Templates", "layout-grid", "bg-amber-50 text-amber-500", "navigate('#/templates')"],
+          ["Docs", "book-open", "bg-sky-50 text-sky-600", "navigate('#/docs')"]
+        ].map(([l, ic, bg, act]) => `<button onclick="${act}" class="border border-soft wevlo-card-hover rounded-2xl p-3 flex flex-col items-center gap-2"><span class="w-10 h-10 rounded-xl ${bg} flex items-center justify-center"><i data-lucide="${ic}" class="w-5 h-5"></i></span><span class="text-[11px] font-bold text-center">${l}</span></button>`).join("")}
       </div>
     </div>`;
 }
@@ -705,9 +648,9 @@ function renderDashboard() {
 function renderProjects() {
   const filtered = state.projects.filter((p) => p.name.toLowerCase().includes(state.projSearch.toLowerCase()));
   if (state.projects.length === 0) {
-    return `<div class="wevlo-card p-6 border-2 border-dashed border-soft text-center space-y-4"><h2 class="text-xl font-extrabold">No projects yet</h2><button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">+ Create Project</button></div>`;
+    return `<div class="wevlo-card p-8 border-2 border-dashed border-soft text-center space-y-4"><h2 class="text-xl font-extrabold">No web projects yet</h2><button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">+ Create Project</button></div>`;
   }
-  return `<div class="flex flex-wrap justify-between gap-3"><h1 class="text-xl font-extrabold">My Projects (${filtered.length})</h1><div class="flex gap-2"><input value="${state.projSearch}" oninput="state.projSearch=this.value;render()" placeholder="Search..." class="border border-soft rounded-full px-4 py-1.5 text-xs bg-transparent"/><button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New</button></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">${filtered.map((p) => `<div class="wevlo-card p-5 space-y-3"><div class="flex justify-between"><div><h3 class="font-bold text-base">${p.name}</h3><p class="text-xs text-muted uppercase">${p.type}</p></div><button onclick="confirmDeleteProject('${p.id}')" class="text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div><div class="flex gap-2"><button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit</button><button onclick="openProjectInPreview('${p.id}')" class="border border-soft px-3.5 py-1.5 rounded-full text-xs font-bold">Preview</button><button onclick="openProjectInBuild('${p.id}')" class="bg-purple-50 text-purple-700 px-3.5 py-1.5 rounded-full text-xs font-bold">Build APK</button></div></div>`).join("")}</div>`;
+  return `<div class="flex flex-wrap justify-between gap-3"><h1 class="text-xl font-extrabold">My Projects (${filtered.length})</h1><div class="flex gap-2"><input value="${state.projSearch}" oninput="state.projSearch=this.value;render()" placeholder="Search..." class="border border-soft rounded-full px-4 py-1.5 text-xs bg-transparent"/><button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New</button></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">${filtered.map((p) => `<div class="wevlo-card wevlo-card-hover p-5 space-y-3"><div class="flex justify-between"><div><h3 class="font-bold text-base">${p.name}</h3><p class="text-xs text-muted uppercase">${p.type}</p></div><button onclick="confirmDeleteProject('${p.id}')" class="text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div><div class="flex gap-2"><button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit</button><button onclick="openProjectInPreview('${p.id}')" class="border border-soft px-3.5 py-1.5 rounded-full text-xs font-bold">Preview</button><button onclick="openProjectInBuild('${p.id}')" class="bg-violet-50 text-violet-700 px-3.5 py-1.5 rounded-full text-xs font-bold">Build APK</button></div></div>`).join("")}</div>`;
 }
 
 function renderBuildApk() {
@@ -716,37 +659,67 @@ function renderBuildApk() {
     return `<div class="wevlo-card p-6 text-center space-y-3"><h3 class="font-bold">No projects to build</h3><button onclick="navigate('#/projects')" class="btn-purple px-6 py-2.5 rounded-full text-xs font-bold">Go to My Projects</button></div>`;
   }
   const b = state.buildConfig;
-  const toggleRow = (l, k, fkey = null) => {
-    const acc = fkey ? checkFeatureAccess(fkey, state) : { allowed: true, mode: "free" };
-    return `<div class="flex justify-between items-center py-1"><span>${l} ${acc.mode === "pro" ? '<span class="pro-badge">PRO</span>' : ""}</span><label class="toggle-switch"><input type="checkbox" ${b[k] ? "checked" : ""} onchange="if(${!acc.allowed}){this.checked=false;navigate('#/subscription');showToast('Wevlo Pro required!','error')}else{state.buildConfig['${k}']=this.checked}"><span class="toggle-slider"></span></label></div>`;
-  };
-  return `<div class="wevlo-card p-5 space-y-4 text-xs"><b class="text-base">Build APK (${proj.name})</b><div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><input value="${b.pkgName}" oninput="state.buildConfig.pkgName=this.value" class="border border-soft rounded-xl px-3 py-2 bg-transparent"/><input id="bRepoName" value="wevlo-${proj.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}" class="border border-soft rounded-xl px-3 py-2 bg-transparent"/></div><div class="space-y-1.5 border border-soft rounded-2xl p-3.5">${toggleRow("JavaScript", "jsEnabled")}${toggleRow("AES-256-GCM Encryption", "encryption", "proEncryption")}${toggleRow("App Lock", "appLock", "proAppLock")}${toggleRow("Push Notifications", "pushPro", "proPush")}${toggleRow("AdMob Ads", "adsPro", "proAds")}</div><button onclick="buildProjectToApk('${proj.id}')" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">Start Build APK →</button><div id="buildProjLog" class="hidden border border-soft rounded-2xl p-4"></div></div>`;
+  const toggleRow = (l, k) => `<div class="flex justify-between items-center py-1.5"><span>${l}</span><label class="toggle-switch"><input type="checkbox" ${b[k] ? "checked" : ""} onchange="state.buildConfig['${k}']=this.checked"><span class="toggle-slider"></span></label></div>`;
+  return `
+    <div class="wevlo-card p-5 space-y-4 text-xs">
+      <b class="text-base">Build APK (${proj.name})</b>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label class="font-bold text-muted">Package ID</label><input value="${b.pkgName}" oninput="state.buildConfig.pkgName=this.value" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/></div>
+        <div><label class="font-bold text-muted">GitHub Repo Prefix</label><input id="bRepoName" value="wevlo-${proj.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/></div>
+      </div>
+      <div class="space-y-1 border border-soft rounded-2xl p-3.5">
+        ${toggleRow("Enable JavaScript", "jsEnabled")}
+        ${toggleRow("Enable DOM Storage", "domStorage")}
+        ${toggleRow("Fullscreen Mode", "fullscreen")}
+      </div>
+      <button onclick="buildProjectToApk('${proj.id}')" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">Start Build APK →</button>
+      <div id="buildProjLog" class="hidden border border-soft rounded-2xl p-4"></div>
+    </div>`;
 }
 
 function renderWeb2App() {
   const w = state.web2app;
-  return `<div class="hero-lavender rounded-[24px] p-5 flex justify-between items-center"><h1 class="text-xl font-extrabold text-slate-900">Website Into <span class="text-purple-700">Android App</span></h1><div class="icon-box-purple w-11 h-11 rounded-2xl flex items-center justify-center"><i data-lucide="globe" class="w-5 h-5"></i></div></div><div class="grid grid-cols-1 lg:grid-cols-12 gap-5"><div class="lg:col-span-7 wevlo-card p-5 space-y-3 text-xs"><input value="${w.url}" oninput="updateW2A('url',this.value)" placeholder="https://" class="w-full border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/><input value="${w.appName}" oninput="updateW2A('appName',this.value)" placeholder="App Name" class="w-full border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/><input value="${w.pkgName}" oninput="updateW2A('pkgName',this.value)" placeholder="com.myapp.web" class="w-full border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/><button onclick="startWeb2AppBuild()" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">🚀 Convert to Android App →</button><div id="w2aLog" class="hidden border border-soft rounded-2xl p-4"></div></div><div class="lg:col-span-5 wevlo-card p-5 flex justify-center"><div class="phone-mockup flex flex-col"><div class="phone-notch"></div><div class="btn-purple pt-6 pb-2.5 px-3 text-white text-xs font-bold" id="mockAppName">${w.appName}</div><div class="flex-1 flex flex-col items-center justify-center p-4 text-center"><p class="font-extrabold text-sm">Welcome to ${w.appName}</p><p class="text-[11px] text-slate-400 break-all mt-1">${w.url}</p></div></div></div></div>`;
-}
-
-function renderWallet() {
-  const w = state.wallet;
-  const pCfg = state.paymentConfig || DEFAULT_PAYMENT_CONFIG;
-  const sendNum = state.payMethod === "bKash" ? pCfg.bkashNumber : pCfg.nagadNumber;
   return `
-    <div class="hero-lavender rounded-[24px] p-5 flex justify-between items-center"><div><h1 class="text-2xl font-extrabold text-slate-900">Digital <span class="text-purple-700">Wallet</span></h1></div><div class="icon-box-purple w-11 h-11 rounded-2xl flex items-center justify-center"><i data-lucide="wallet" class="w-5 h-5"></i></div></div>
-    <div class="grid grid-cols-2 gap-3.5"><div class="wevlo-card p-4"><b>Available Balance</b><p class="text-lg font-extrabold text-purple-700">৳${w.balance.toFixed(2)}</p></div><div class="wevlo-card p-4"><b>Total Deposited</b><p class="text-lg font-extrabold">৳${w.deposited}</p></div><div class="wevlo-card p-4"><b>Total Spent</b><p class="text-lg font-extrabold">৳${w.spent}</p></div><div class="wevlo-card p-4"><b>Pending</b><p class="text-lg font-extrabold">${w.pending}</p></div></div>
-    <div class="wevlo-card p-5 space-y-3">
-      <div class="grid grid-cols-2 gap-2"><button onclick="state.payMethod='bKash';render()" class="py-2 rounded-xl font-bold text-xs ${state.payMethod === "bKash" ? "btn-purple" : "border border-soft"}">bKash</button><button onclick="state.payMethod='Nagad';render()" class="py-2 rounded-xl font-bold text-xs ${state.payMethod === "Nagad" ? "btn-purple" : "border border-soft"}">Nagad</button></div>
-      <div class="flex flex-wrap gap-2">${[50, 100, 200, 500, 1000].map((a) => `<button onclick="state.payAmount=${a};render()" class="px-4 py-1.5 rounded-full text-xs font-bold border ${state.payAmount === a ? "border-purple-600 text-purple-700" : "border-soft"}">৳${a}</button>`).join("")}</div>
-      <div class="bg-[#f3f0fc] text-slate-900 rounded-2xl p-3 flex justify-between text-xs font-bold"><span>Send Money (${state.payMethod}): ${sendNum}</span><button onclick="navigator.clipboard?.writeText('${sendNum}');showToast('Copied!','success')" class="bg-white px-3 py-1 rounded-full border">Copy</button></div>
-      <p class="text-[11px] text-muted">${pCfg.notice}</p>
-      <input id="trxInput" placeholder="Transaction ID (TrxID)" class="w-full border border-soft rounded-xl px-4 py-2.5 text-sm bg-transparent"/>
-      <button onclick="submitWalletDeposit()" class="w-full btn-purple py-3 rounded-full text-sm font-bold">Add Funds Now →</button>
+    <div class="hero-lavender rounded-[24px] p-5 flex justify-between items-center">
+      <h1 class="text-xl font-extrabold text-slate-900">Website Into <span class="text-violet-700">Android App</span></h1>
+      <div class="icon-box-purple w-11 h-11 rounded-2xl flex items-center justify-center"><i data-lucide="globe" class="w-5 h-5"></i></div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="lg:col-span-7 wevlo-card p-5 space-y-3 text-xs">
+        <div><label class="font-bold text-muted">Website URL</label><input value="${w.url}" oninput="updateW2A('url',this.value)" placeholder="https://" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
+        <div><label class="font-bold text-muted">App Name</label><input value="${w.appName}" oninput="updateW2A('appName',this.value)" placeholder="App Name" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
+        <div><label class="font-bold text-muted">Package ID</label><input value="${w.pkgName}" oninput="updateW2A('pkgName',this.value)" placeholder="com.myapp.web" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
+        <button onclick="startWeb2AppBuild()" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">🚀 Convert to Android App →</button>
+        <div id="w2aLog" class="hidden border border-soft rounded-2xl p-4"></div>
+      </div>
+      <div class="lg:col-span-5 wevlo-card p-5 flex justify-center">
+        <div class="phone-mockup flex flex-col">
+          <div class="phone-notch"></div>
+          <div class="btn-purple pt-6 pb-2.5 px-3 text-white text-xs font-bold" id="mockAppName">${w.appName}</div>
+          <div class="flex-1 flex flex-col items-center justify-center p-4 text-center">
+            <p class="font-extrabold text-sm">Welcome to ${w.appName}</p>
+            <p class="text-[11px] text-slate-400 break-all mt-1">${w.url}</p>
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
 function renderTemplates() {
-  return `<h1 class="text-xl font-extrabold">Templates</h1><div class="grid grid-cols-1 md:grid-cols-3 gap-4">${["Portfolio Landing", "E-Commerce Store", "News & Blog App"].map((n) => `<div class="wevlo-card p-5 space-y-3"><h3 class="font-bold text-base">${n}</h3><button onclick="cloneTemplate('${n}')" class="w-full btn-purple py-2 rounded-full text-xs font-bold">Use Template</button></div>`).join("")}</div>`;
+  return `
+    <h1 class="text-xl font-extrabold">Templates</h1>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      ${["Portfolio Landing", "E-Commerce Store", "News & Blog App"]
+        .map(
+          (n) => `
+        <div class="wevlo-card wevlo-card-hover p-5 space-y-3">
+          <h3 class="font-bold text-base">${n}</h3>
+          <p class="text-xs text-muted">Ready-to-edit HTML/CSS/JS starter.</p>
+          <button onclick="cloneTemplate('${n}')" class="w-full btn-purple py-2.5 rounded-full text-xs font-bold">Use Template</button>
+        </div>`
+        )
+        .join("")}
+    </div>`;
 }
 
 function renderPreview() {
@@ -759,20 +732,28 @@ function renderPreview() {
 
 function renderSettings() {
   const pr = state.profile;
-  return `<div class="wevlo-card p-5 space-y-4 text-xs"><h1 class="text-xl font-extrabold">Settings &amp; Profile</h1><input value="${pr.name}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full border border-soft rounded-xl px-3 py-2 bg-transparent"/><div class="flex flex-wrap gap-2.5"><button onclick="saveUserProfile()" class="btn-purple px-5 py-2 rounded-full font-bold">Save Profile</button><button onclick="openEmailAuthModal()" class="border border-purple-400 text-purple-700 px-4 py-2 rounded-full font-bold">Email / Password Login</button><button onclick="openGhTokenModal()" class="border border-soft px-4 py-2 rounded-full font-bold">GitHub via Token</button><button onclick="loginWithGoogle()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect Gmail</button><button onclick="loginWithGithub()" class="border border-soft px-4 py-2 rounded-full font-bold">Connect GitHub</button><button onclick="confirmLogout()" class="border border-rose-300 text-rose-600 px-4 py-2 rounded-full font-bold">Remove / Sign Out</button></div></div>`;
+  return `
+    <div class="wevlo-card p-5 space-y-4 text-xs">
+      <h1 class="text-xl font-extrabold">Settings &amp; Connections</h1>
+      <div>
+        <label class="font-bold text-muted">Developer Name</label>
+        <input value="${pr.name || ""}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/>
+      </div>
+      <div class="flex flex-wrap gap-2.5">
+        <button onclick="saveUserProfile()" class="btn-purple px-5 py-2.5 rounded-full font-bold">Save Profile</button>
+        <button onclick="loginWithGithub()" class="border border-soft px-4 py-2.5 rounded-full font-bold">Connect GitHub (OAuth)</button>
+        <button onclick="openGhTokenModal()" class="border border-soft px-4 py-2.5 rounded-full font-bold">GitHub via Token</button>
+        <button onclick="loginWithGoogle()" class="border border-soft px-4 py-2.5 rounded-full font-bold">Connect Google</button>
+        <button onclick="openEmailAuthModal()" class="border border-violet-400 text-violet-700 px-4 py-2.5 rounded-full font-bold">Email / Password</button>
+        <button onclick="confirmLogout()" class="border border-rose-300 text-rose-600 px-4 py-2.5 rounded-full font-bold">Disconnect / Sign Out</button>
+      </div>
+    </div>`;
 }
 
 // ======================================================
-// 8. Bindings & Router With Feature Gate
+// 8. Bindings & Router
 // ======================================================
-const langKeyMap = { java: "langJava", kotlin: "langKotlin", flutter: "langFlutter", capacitor: "langCapacitor", python: "langPython" };
 window.openStudioLanguage = (lang) => {
-  const acc = checkFeatureAccess(langKeyMap[lang] || "langJava", state);
-  if (!acc.allowed) {
-    if (acc.mode === "off") return window.showToast("This language is currently unavailable.", "error");
-    window.showToast("This is a Pro feature! Please upgrade to Wevlo Pro.", "error");
-    return window.navigate("#/subscription");
-  }
   state.newRepoLang = lang;
   state.ghNewProjModalOpen = true;
   state.ghIdeOpen = false;
@@ -811,32 +792,33 @@ window.updateW2A = (k, v) => {
     if (el) el.textContent = v;
   }
 };
+
 window.startWeb2AppBuild = () => {
   const w = state.web2app;
-  const repoName = "wevlo-" + w.appName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(Math.random() * 900 + 100);
   runGithubApkPipeline({
-    repoName,
+    repoName: "wevlo-" + w.appName,
     appName: w.appName,
     pkgName: w.pkgName,
-    javaSource: `import android.app.Activity;import android.os.Bundle;import android.webkit.*;public class MainActivity extends Activity{private WebView wv;@Override protected void onCreate(Bundle b){super.onCreate(b);wv=new WebView(this);wv.getSettings().setJavaScriptEnabled(true);wv.setWebViewClient(new WebViewClient());wv.loadUrl("${w.url}");setContentView(wv);}}`,
+    javaSource: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.*;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    WebView wv = new WebView(this);\n    wv.getSettings().setJavaScriptEnabled(true);\n    wv.getSettings().setDomStorageEnabled(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl("${w.url}");\n    setContentView(wv);\n  }\n}`,
     logElId: "w2aLog"
   });
 };
+
 window.buildProjectToApk = (id) => {
   const proj = state.projects.find((p) => p.id === id);
   if (!proj) return;
-  const fullHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, "");
+  const fullHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
+  const htmlB64 = toBase64(fullHtml);
+  const b = state.buildConfig;
   runGithubApkPipeline({
     repoName: document.getElementById("bRepoName").value.trim(),
     appName: proj.name,
-    pkgName: state.buildConfig.pkgName,
-    javaSource: `import android.app.Activity;import android.os.Bundle;import android.webkit.WebView;public class MainActivity extends Activity{@Override protected void onCreate(Bundle b){super.onCreate(b);WebView w=new WebView(this);w.getSettings().setJavaScriptEnabled(true);w.loadDataWithBaseURL(null,"${fullHtml}","text/html","UTF-8",null);setContentView(w);}}`,
+    pkgName: b.pkgName,
+    javaSource: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.util.Base64;\nimport android.webkit.WebView;\nimport java.nio.charset.StandardCharsets;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    WebView w = new WebView(this);\n    w.getSettings().setJavaScriptEnabled(${!!b.jsEnabled});\n    w.getSettings().setDomStorageEnabled(${!!b.domStorage});\n    String html = new String(Base64.decode("${htmlB64}", Base64.DEFAULT), StandardCharsets.UTF_8);\n    w.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);\n    setContentView(w);\n  }\n}`,
     logElId: "buildProjLog"
   });
 };
+
 window.cloneTemplate = (name) => {
   state.projects.unshift({
     id: "proj_" + Date.now(),
@@ -852,68 +834,20 @@ window.cloneTemplate = (name) => {
   window.navigate("#/editor");
 };
 
-window.submitWalletDeposit = async () => {
-  const trx = document.getElementById("trxInput").value.trim();
-  if (!trx) return window.showToast("Please enter Transaction ID (TrxID)!", "error");
-  const ok = await window.submitCloudPayment?.({
-    type: "deposit",
-    method: state.payMethod,
-    amount: state.payAmount,
-    trxId: trx,
-    screenshotName: state.depositFileName
-  });
-  if (ok) {
-    state.wallet.pending += 1;
-    state.payments.unshift({
-      id: "DEP-" + Date.now(),
-      title: `${state.payMethod} Deposit`,
-      amount: state.payAmount,
-      method: state.payMethod,
-      trx,
-      status: "Pending",
-      date: new Date().toLocaleDateString()
-    });
-    localStorage.setItem("wevlo_wallet", JSON.stringify(state.wallet));
-    localStorage.setItem("wevlo_payments", JSON.stringify(state.payments));
-    document.getElementById("trxInput").value = "";
-    window.render();
-  }
-};
 window.saveUserProfile = () => {
   localStorage.setItem("wevlo_profile", JSON.stringify(state.profile));
   updateAccountUI();
   window.showToast("Profile saved!", "success");
 };
 
-const routeFeatureMap = {
-  "#/editor": ["codeEditor", "Code Editor"],
-  "#/preview": ["preview", "Device Preview"],
-  "#/web2app": ["web2app", "Website to App"],
-  "#/build": ["buildApk", "Build APK"],
-  "#/github-build": ["githubBuild", "GitHub Build IDE"],
-  "#/templates": ["templates", "Templates"],
-  "#/lab": ["lab", "Community Lab"],
-  "#/files": ["fileManager", "File Manager"],
-  "#/icons": ["iconLibrary", "Icon Library"],
-  "#/secure-converter": ["secureConverter", "Secure Converter"],
-  "#/push": ["proPush", "Push Notifications"]
-};
-
 window.state = state;
 window.render = function render() {
-  if (state.route === "#/admin" && !isAdminUser(state)) {
-    state.route = "#/";
-    window.history.replaceState(null, "", "#/");
-  }
-
   renderHeaderAndNav();
 
-  const gate = routeFeatureMap[state.route];
-  const gateResult = gate ? checkFeatureAccess(gate[0], state) : { allowed: true };
-
   const isFullIde =
-    gateResult.allowed &&
-    ((state.route === "#/editor" && !!getActiveProject()) || (state.route === "#/github-build" && !!state.ghIdeOpen && !!state.selectedGhRepo));
+    (state.route === "#/editor" && !!getActiveProject()) ||
+    (state.route === "#/github-build" && !!state.ghIdeOpen && !!state.selectedGhRepo);
+
   const headerEl = document.querySelector("header");
   const sidebarEl = document.getElementById("sidebar");
   const bnavEl = document.querySelector("nav.fixed");
@@ -924,45 +858,37 @@ window.render = function render() {
   if (c?.parentElement) c.parentElement.className = isFullIde ? "flex-1 flex flex-col min-w-0" : "flex-1 flex flex-col min-w-0 pb-24 lg:pb-8";
   if (c) c.className = isFullIde ? "w-full min-h-screen p-0" : "max-w-5xl w-full mx-auto px-4 py-5 space-y-5";
 
-  if (!gateResult.allowed) {
-    c.innerHTML = renderFeatureLocked(gate[1], gateResult.mode);
-  } else if (state.route === "#/admin" && isAdminUser(state)) {
-    c.innerHTML = renderAdminPanel({ state, showToast: window.showToast, render: window.render });
+  const extraHtml = renderExtraPages({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, addActivity, openConfirmModal });
+  if (extraHtml) {
+    c.innerHTML = extraHtml;
   } else {
-    const extraHtml = renderExtraPages({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, addActivity, openConfirmModal });
-    if (extraHtml) c.innerHTML = extraHtml;
-    else {
-      switch (state.route) {
-        case "#/projects":
-          c.innerHTML = renderProjects();
-          break;
-        case "#/editor":
-          c.innerHTML = renderProCodeEditor({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, openNewProjectModal: window.openNewProjectModal });
-          break;
-        case "#/build":
-          c.innerHTML = renderBuildApk();
-          break;
-        case "#/web2app":
-          c.innerHTML = renderWeb2App();
-          break;
-        case "#/github-build":
-          c.innerHTML = renderProGithubBuild({ state, ghFetch, showToast: window.showToast, render: window.render, navigate: window.navigate, confirmLogout: window.confirmLogout, loginWithGithub: window.loginWithGithub, loadGithubRepos: window.loadGithubRepos });
-          break;
-        case "#/wallet":
-          c.innerHTML = renderWallet();
-          break;
-        case "#/templates":
-          c.innerHTML = renderTemplates();
-          break;
-        case "#/preview":
-          c.innerHTML = renderPreview();
-          break;
-        case "#/settings":
-          c.innerHTML = renderSettings();
-          break;
-        default:
-          c.innerHTML = renderDashboard();
-      }
+    switch (state.route) {
+      case "#/projects":
+        c.innerHTML = renderProjects();
+        break;
+      case "#/editor":
+        c.innerHTML = renderProCodeEditor({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, openNewProjectModal: window.openNewProjectModal });
+        break;
+      case "#/build":
+        c.innerHTML = renderBuildApk();
+        break;
+      case "#/web2app":
+        c.innerHTML = renderWeb2App();
+        break;
+      case "#/github-build":
+        c.innerHTML = renderProGithubBuild({ state, ghFetch, showToast: window.showToast, render: window.render, navigate: window.navigate, confirmLogout: window.confirmLogout, loginWithGithub: window.loginWithGithub, loadGithubRepos: window.loadGithubRepos });
+        break;
+      case "#/templates":
+        c.innerHTML = renderTemplates();
+        break;
+      case "#/preview":
+        c.innerHTML = renderPreview();
+        break;
+      case "#/settings":
+        c.innerHTML = renderSettings();
+        break;
+      default:
+        c.innerHTML = renderDashboard();
     }
   }
   if (window.lucide) window.lucide.createIcons();
