@@ -41,7 +41,7 @@ function ensureProjectFiles(proj) {
         lang: "HTML",
         content:
           proj.html ||
-          `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${proj.name}</title>\n</head>\n<body>\n  <h1>${proj.name}</h1>\n  <p>Built with Wevlo Pro Editor</p>\n</body>\n</html>`
+          `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${proj.name}</title>\n</head>\n<body>\n  <h1>${proj.name}</h1>\n  <p>Built with Wevlo Studio</p>\n</body>\n</html>`
       },
       { name: "styles.css", lang: "CSS", content: proj.css || `body { font-family: sans-serif; padding: 20px; }` },
       { name: "script.js", lang: "JS", content: proj.js || `console.log("Ready!");` }
@@ -83,8 +83,37 @@ function getFileBadge(path) {
 
 function toBase64Utf8(str) {
   let bin = "";
-  new TextEncoder().encode(str).forEach((b) => (bin += String.fromCharCode(b)));
+  new TextEncoder().encode(str || "").forEach((b) => (bin += String.fromCharCode(b)));
   return btoa(bin);
+}
+
+function fromBase64Utf8(b64) {
+  const clean = (b64 || "").replace(/\s/g, "");
+  if (!clean) return "";
+  const binStr = atob(clean);
+  const bytes = new Uint8Array(binStr.length);
+  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+function arrayBufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function sanitizeRepoName(raw) {
+  return (
+    (raw || "wevlo-app")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-zA-Z0-9._-]/g, "-")
+      .replace(/^-+|-+$/g, "") || "wevlo-app"
+  );
 }
 
 // ======================================================
@@ -99,7 +128,7 @@ export function renderProCodeEditor(ctx) {
       <div class="max-w-5xl mx-auto px-4 py-6">
         <div class="wevlo-card p-6">
           <div class="flex items-center justify-between mb-8">
-            <div class="flex items-center gap-2"><i data-lucide="folder" class="w-5 h-5 text-purple-600"></i><h2 class="font-extrabold text-base">Choose a project</h2></div>
+            <div class="flex items-center gap-2"><i data-lucide="folder" class="w-5 h-5 text-violet-600"></i><h2 class="font-extrabold text-base">Choose a project</h2></div>
             <button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New project</button>
           </div>
           <div class="py-10 text-center space-y-2"><i data-lucide="folder" class="w-10 h-10 mx-auto text-muted"></i><p class="font-bold">No projects yet</p></div>
@@ -118,26 +147,48 @@ export function renderProCodeEditor(ctx) {
     const name = prompt("New file name (e.g. about.html):");
     if (!name || !name.trim()) return;
     files.push({ name: name.trim(), lang: name.trim().split(".").pop().toUpperCase(), content: "" });
-    state.edActiveFile = name.trim(); state.edDrawerOpen = false; saveProjects(); render();
+    state.edActiveFile = name.trim();
+    state.edDrawerOpen = false;
+    saveProjects();
+    render();
   };
   window.importEdFile = (e) => {
-    const f = e.target.files[0]; if (!f) return;
+    const f = e.target.files?.[0];
+    if (!f) return;
     const r = new FileReader();
-    r.onload = () => { files.push({ name: f.name, lang: f.name.split(".").pop().toUpperCase(), content: r.result }); state.edActiveFile = f.name; state.edDrawerOpen = false; syncProjectPreviewData(proj); saveProjects(); render(); };
+    r.onload = () => {
+      files.push({ name: f.name, lang: f.name.split(".").pop().toUpperCase(), content: r.result });
+      state.edActiveFile = f.name;
+      state.edDrawerOpen = false;
+      syncProjectPreviewData(proj);
+      saveProjects();
+      render();
+      showToast(`Imported ${f.name}!`, "success");
+    };
     r.readAsText(f);
+    e.target.value = "";
   };
   window.exportEdProject = () => {
     syncProjectPreviewData(proj);
     const full = `<!DOCTYPE html><html><head><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([full], { type: "text/html" })); a.download = `${proj.name.replace(/\s+/g, "-").toLowerCase()}.html`; a.click();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([full], { type: "text/html" }));
+    a.download = `${proj.name.replace(/\s+/g, "-").toLowerCase()}.html`;
+    a.click();
   };
   window.deleteEdFile = (name) => {
     if (files.length <= 1) return showToast("At least 1 file is required!", "error");
-    proj.files = files.filter((f) => f.name !== name); state.edActiveFile = proj.files[0].name; syncProjectPreviewData(proj); saveProjects(); render();
+    proj.files = files.filter((f) => f.name !== name);
+    state.edActiveFile = proj.files[0].name;
+    syncProjectPreviewData(proj);
+    saveProjects();
+    render();
   };
   window.insertWebSymbol = (sym) => {
-    const cm = window.__wevloCM; if (!cm) return;
-    cm.replaceSelection(sym === "TAB" ? "  " : sym); cm.focus();
+    const cm = window.__wevloCM;
+    if (!cm) return;
+    cm.replaceSelection(sym === "TAB" ? "  " : sym);
+    cm.focus();
   };
 
   syncProjectPreviewData(proj);
@@ -146,9 +197,18 @@ export function renderProCodeEditor(ctx) {
   requestAnimationFrame(() => {
     if (!state.edQuickPreview && !state.edDrawerOpen) {
       mountCodeMirror({
-        hostId: "proCmHost", value: activeFile.content || "", filePath: activeFile.name,
-        onChange: (val) => { activeFile.content = val; syncProjectPreviewData(proj); saveProjects(); },
-        onCursor: (ln, col) => { const el = document.getElementById("webCursorPos"); if (el) el.textContent = `${activeFile.lang}  Ln ${ln}, Col ${col}`; }
+        hostId: "proCmHost",
+        value: activeFile.content || "",
+        filePath: activeFile.name,
+        onChange: (val) => {
+          activeFile.content = val;
+          syncProjectPreviewData(proj);
+          saveProjects();
+        },
+        onCursor: (ln, col) => {
+          const el = document.getElementById("webCursorPos");
+          if (el) el.textContent = `${activeFile.lang}  Ln ${ln}, Col ${col}`;
+        }
       });
     }
   });
@@ -164,13 +224,13 @@ export function renderProCodeEditor(ctx) {
         <div class="flex items-center gap-1.5">
           <button onclick="saveProjects(); showToast('Saved!','success')" class="btn-purple p-2 rounded-xl"><i data-lucide="save" class="w-4 h-4"></i></button>
           <button onclick="state.edQuickPreview=true; render()" class="p-2 rounded-xl border bg-white"><i data-lucide="play" class="w-4 h-4"></i></button>
-          <button onclick="navigate('#/build')" class="p-2 rounded-xl border bg-white text-purple-600"><i data-lucide="rocket" class="w-4 h-4"></i></button>
+          <button onclick="navigate('#/build')" class="p-2 rounded-xl border bg-white text-violet-600"><i data-lucide="rocket" class="w-4 h-4"></i></button>
         </div>
       </div>
 
       <div class="bg-[#242136] px-2 pt-1.5 flex items-center justify-between gap-2 border-b border-[#322e4a] shrink-0">
         <div class="flex items-center gap-1 overflow-x-auto">
-          ${files.map((f) => `<button onclick="selectEdFile('${f.name}')" class="px-3.5 py-2 rounded-t-xl text-xs font-semibold shrink-0 ${f.name === activeFile.name ? "bg-[#282a36] text-white border-t-2 border-purple-500" : "text-slate-400"}">${f.name}</button>`).join("")}
+          ${files.map((f) => `<button onclick="selectEdFile('${f.name}')" class="px-3.5 py-2 rounded-t-xl text-xs font-semibold shrink-0 ${f.name === activeFile.name ? "bg-[#282a36] text-white border-t-2 border-violet-500" : "text-slate-400"}">${f.name}</button>`).join("")}
         </div>
         <div class="flex items-center gap-1 pb-1 shrink-0">
           <button onclick="cmToolbarAct('all')" class="px-2 py-1 rounded-lg bg-[#342f52] text-[10px] font-bold text-slate-200">All</button>
@@ -191,8 +251,8 @@ export function renderProCodeEditor(ctx) {
         <span id="webCursorPos">${activeFile.lang}  Ln 1, Col 1</span>
         <span class="text-emerald-400 font-semibold">● Ready</span>
       </div>
-      ${state.edDrawerOpen ? `<div class="absolute inset-0 z-40 flex"><div class="w-72 bg-white text-slate-900 h-full flex flex-col justify-between p-4 shadow-2xl"><div class="space-y-4 overflow-y-auto"><div class="flex items-center justify-between"><span class="font-extrabold text-sm">${proj.name}</span><button onclick="toggleEdDrawer(false)" class="p-1.5 rounded-xl bg-slate-100"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="grid grid-cols-3 gap-1.5 text-center text-[10px] font-bold"><button onclick="createEdNewFile()" class="p-2 rounded-xl border">New file</button><label class="p-2 rounded-xl border cursor-pointer">Import<input type="file" class="hidden" onchange="importEdFile(event)" /></label><button onclick="exportEdProject()" class="p-2 rounded-xl border">Export</button></div><div class="space-y-1.5">${files.map((f) => `<div class="flex items-center justify-between px-3 py-2 rounded-xl ${f.name === activeFile.name ? "bg-purple-50 text-purple-800 font-bold" : ""}"><button onclick="selectEdFile('${f.name}')" class="text-xs flex-1 text-left">${f.name}</button><button onclick="deleteEdFile('${f.name}')" class="text-rose-500 text-xs">×</button></div>`).join("")}</div></div></div><div onclick="toggleEdDrawer(false)" class="flex-1 bg-black/40"></div></div>` : ""}
-      ${state.edQuickPreview ? `<div class="fixed inset-0 z-50 bg-white text-slate-900 flex flex-col"><div class="h-14 px-4 border-b flex items-center justify-between"><button onclick="state.edQuickPreview=false; render()" class="font-bold text-sm">← Back</button><span class="font-bold text-xs text-purple-700">${proj.name}</span><span></span></div><iframe class="flex-1 w-full bg-white" srcdoc="${quickPreviewDoc.replace(/"/g, "&quot;")}"></iframe></div>` : ""}
+      ${state.edDrawerOpen ? `<div class="absolute inset-0 z-40 flex"><div class="w-72 bg-white text-slate-900 h-full flex flex-col justify-between p-4 shadow-2xl"><div class="space-y-4 overflow-y-auto"><div class="flex items-center justify-between"><span class="font-extrabold text-sm">${proj.name}</span><button onclick="toggleEdDrawer(false)" class="p-1.5 rounded-xl bg-slate-100"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="grid grid-cols-3 gap-1.5 text-center text-[10px] font-bold"><button onclick="createEdNewFile()" class="p-2 rounded-xl border">New file</button><label class="p-2 rounded-xl border cursor-pointer">Import<input type="file" class="hidden" onchange="importEdFile(event)" /></label><button onclick="exportEdProject()" class="p-2 rounded-xl border">Export</button></div><div class="space-y-1.5">${files.map((f) => `<div class="flex items-center justify-between px-3 py-2 rounded-xl ${f.name === activeFile.name ? "bg-violet-50 text-violet-800 font-bold" : ""}"><button onclick="selectEdFile('${f.name}')" class="text-xs flex-1 text-left">${f.name}</button><button onclick="deleteEdFile('${f.name}')" class="text-rose-500 text-xs">×</button></div>`).join("")}</div></div></div><div onclick="toggleEdDrawer(false)" class="flex-1 bg-black/40"></div></div>` : ""}
+      ${state.edQuickPreview ? `<div class="fixed inset-0 z-50 bg-white text-slate-900 flex flex-col"><div class="h-14 px-4 border-b flex items-center justify-between"><button onclick="state.edQuickPreview=false; render()" class="font-bold text-sm">← Back</button><span class="font-bold text-xs text-violet-700">${proj.name}</span><span></span></div><iframe class="flex-1 w-full bg-white" srcdoc="${quickPreviewDoc.replace(/"/g, "&quot;")}"></iframe></div>` : ""}
     </div>`;
 }
 
@@ -219,7 +279,7 @@ function renderFolderTreeHtml(node, prefix, expandedMap, activePath) {
   for (const fname of Object.keys(node.folders).sort()) {
     const fullFolder = prefix ? `${prefix}/${fname}` : fname;
     const isOpen = !!expandedMap[fullFolder];
-    const folderColor = fname === "res" || fname === "assets" ? "text-amber-400" : fname === "screens" || fname === "widgets" ? "text-emerald-400" : "text-sky-400";
+    const folderColor = fname === "res" || fname === "assets" ? "text-amber-400" : "text-sky-400";
     html += `
       <div>
         <div class="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/5">
@@ -236,7 +296,7 @@ function renderFolderTreeHtml(node, prefix, expandedMap, activePath) {
   for (const file of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
     const active = file.path === activePath;
     html += `
-      <div class="flex items-center justify-between py-1.5 px-2.5 rounded-xl ${active ? "bg-purple-600/35 text-white font-bold shadow-sm" : "hover:bg-white/5 text-slate-200"}">
+      <div class="flex items-center justify-between py-1.5 px-2.5 rounded-xl ${active ? "bg-violet-600/35 text-white font-bold shadow-sm" : "hover:bg-white/5 text-slate-200"}">
         <button onclick="openGhIdeFile('${file.path}')" class="flex items-center gap-2.5 min-w-0 flex-1 text-left">
           ${getFileBadge(file.name)}
           <span class="text-sm truncate">${file.name}</span>
@@ -262,15 +322,7 @@ export function renderProGithubBuild(ctx) {
       "android/app/src": true,
       "android/app/src/main": true,
       lib: true,
-      "lib/screens": true,
-      "lib/widgets": true,
-      assets: true,
       www: true,
-      "www/css": true,
-      "www/js": true,
-      "www/pages": true,
-      screens: true,
-      widgets: true,
       ".github": true,
       ".github/workflows": true
     };
@@ -338,7 +390,9 @@ export function renderProGithubBuild(ctx) {
   if (state.activeBuild?.status === "running" && !window.__wevloBuildPolling) {
     window.__wevloBuildPolling = setInterval(async () => {
       if (!state.activeBuild || state.activeBuild.status !== "running" || !state.githubToken) {
-        clearInterval(window.__wevloBuildPolling); window.__wevloBuildPolling = null; return;
+        clearInterval(window.__wevloBuildPolling);
+        window.__wevloBuildPolling = null;
+        return;
       }
       try {
         const repoFull = state.activeBuild.repoFull;
@@ -352,7 +406,8 @@ export function renderProGithubBuild(ctx) {
           state.activeBuild.progress = Math.min(92, Math.max(25, Math.round((done / Math.max(state.activeBuild.steps.length, 1)) * 90)));
         }
         if (latest.status === "completed") {
-          clearInterval(window.__wevloBuildPolling); window.__wevloBuildPolling = null;
+          clearInterval(window.__wevloBuildPolling);
+          window.__wevloBuildPolling = null;
           state.activeBuild.progress = 100;
           if (latest.conclusion === "success") {
             state.activeBuild.status = "success";
@@ -361,8 +416,10 @@ export function renderProGithubBuild(ctx) {
               const rel = await ghFetch(`/repos/${repoFull}/releases/latest`);
               const asset = rel.assets?.find((a) => a.name.endsWith(".apk") || a.name.endsWith(".aab"));
               if (asset) {
-                state.activeBuild.apkApiUrl = asset.url; state.activeBuild.apkUrl = asset.browser_download_url;
-                state.activeBuild.apkName = asset.name; state.activeBuild.apkSize = (asset.size / 1048576).toFixed(2) + " MB";
+                state.activeBuild.apkApiUrl = asset.url;
+                state.activeBuild.apkUrl = asset.browser_download_url;
+                state.activeBuild.apkName = asset.name;
+                state.activeBuild.apkSize = (asset.size / 1048576).toFixed(2) + " MB";
               }
             } catch {}
             showToast("APK Build succeeded!", "success");
@@ -395,8 +452,13 @@ export function renderProGithubBuild(ctx) {
       showToast("Downloading " + fileName + "...", "info");
       const res = await fetch(apiUrl, { headers: { Authorization: "Bearer " + state.githubToken, Accept: "application/octet-stream" } });
       if (!res.ok) throw new Error();
-      const a = document.createElement("a"); a.href = URL.createObjectURL(await res.blob()); a.download = fileName; a.click();
-    } catch { window.open(browserUrl, "_blank"); }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = fileName;
+      a.click();
+    } catch {
+      window.open(browserUrl, "_blank");
+    }
   };
 
   window.resetRepairWorkflowYaml = async () => {
@@ -429,7 +491,10 @@ export function renderProGithubBuild(ctx) {
       logs: [{ time: new Date().toLocaleTimeString(), msg: `Starting ${activeFw.toUpperCase()} build (${task})...`, isErr: false }],
       steps: [], compilerErrors: [], apkUrl: "", apkApiUrl: "", errorSummary: ""
     };
-    saveActiveBuild(); state.ghMobileTab = "output"; state.ghOutputSubTab = "output"; render();
+    saveActiveBuild();
+    state.ghMobileTab = "output";
+    state.ghOutputSubTab = "output";
+    render();
     try {
       const hasYaml = (state.ghTreeFiles || []).some((f) => f.path.endsWith(".yml") || f.path.endsWith(".yaml"));
       if (state.ghAutoSyncYaml || !hasYaml) {
@@ -448,8 +513,11 @@ export function renderProGithubBuild(ctx) {
       }
       render();
     } catch (e) {
-      state.activeBuild.status = "failed"; state.activeBuild.errorSummary = e.message;
-      appendBuildLog(e.message, true); saveActiveBuild(); render();
+      state.activeBuild.status = "failed";
+      state.activeBuild.errorSummary = e.message;
+      appendBuildLog(e.message, true);
+      saveActiveBuild();
+      render();
     }
   };
 
@@ -469,26 +537,35 @@ export function renderProGithubBuild(ctx) {
   };
 
   window.downloadBuildReportTxt = () => {
-    const b = state.activeBuild; if (!b) return;
+    const b = state.activeBuild;
+    if (!b) return;
     const text = b.rawLogText || [`=== WEVLO REPORT ===`, `Repo: ${b.repoFull} | Framework: ${b.framework} | Status: ${b.status}`, b.errorSummary || "", ...(b.logs || []).map((l) => `[${l.time}] ${l.msg}`)].join("\n");
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = `build-report-${Date.now()}.txt`; a.click();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    a.download = `build-report-${Date.now()}.txt`;
+    a.click();
   };
 
   window.exportLogcatTxt = () => {
     const txt = (state.ghLogcat || []).map((l) => `[${l.time}] ${l.level}/${l.tag}: ${l.msg}`).join("\n");
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" })); a.download = "logcat.txt"; a.click();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" }));
+    a.download = "logcat.txt";
+    a.click();
   };
 
   window.jumpToProblemLine = async (filePath, lineNum) => {
     const match = (state.ghTreeFiles || []).find((f) => f.path.endsWith(filePath)) || { path: filePath };
-    state.pendingJumpLine = lineNum || 1; state.ghEditorView = "code";
+    state.pendingJumpLine = lineNum || 1;
+    state.ghEditorView = "code";
     await window.openGhIdeFile(match.path, true);
   };
 
   window.autoFixProblem = async (idx) => {
     const activeFw = state.ghManualFw || detectFramework(state.ghTreeFiles || []);
     const issues = analyzeProjectIssues({ treeFiles: state.ghTreeFiles || [], activePath: state.ghIdeActivePath || "", activeContent: state.ghIdeContent || "", branch: state.ghBranch || "main", compilerErrors: state.activeBuild?.compilerErrors || [], framework: activeFw });
-    const prob = issues[idx]; if (!prob || !prob.fixPath || !prob.fixContent) return;
+    const prob = issues[idx];
+    if (!prob || !prob.fixPath || !prob.fixContent) return;
     try {
       showToast(`Fixing ${prob.fixPath}...`, "info");
       await ghPutFileSafe(state.selectedGhRepo, prob.fixPath, prob.fixContent, `Auto-fix ${prob.fixPath}`, state.ghBranch || "main");
@@ -496,7 +573,10 @@ export function renderProGithubBuild(ctx) {
         state.ghIdeContent = prob.fixContent;
         state.ghIdeDirty = false;
       }
-      if (state.activeBuild) { state.activeBuild.compilerErrors = []; saveActiveBuild(); }
+      if (state.activeBuild) {
+        state.activeBuild.compilerErrors = [];
+        saveActiveBuild();
+      }
       showToast(`Fixed ${prob.fixPath}!`, "success");
       await window.refreshGhTree();
     } catch (e) { showToast(e.message, "error"); }
@@ -514,29 +594,44 @@ export function renderProGithubBuild(ctx) {
       await ghPutFileSafe(state.selectedGhRepo, `app/src/main/res/layout/${layoutName}.xml`, xmlCode, `Add ${layoutName}.xml`, branch);
       try {
         const manRes = await ghFetch(`/repos/${state.selectedGhRepo}/contents/app/src/main/AndroidManifest.xml?ref=${branch}`);
-        let manTxt = decodeURIComponent(escape(atob((manRes.content || "").replace(/\n/g, ""))));
+        let manTxt = fromBase64Utf8(manRes.content);
         if (!manTxt.includes(`.${className}`) && manTxt.includes("</application>")) {
           manTxt = manTxt.replace("</application>", `    <activity android:name=".${className}" android:exported="false" />\n    </application>`);
           await ghPutFileSafe(state.selectedGhRepo, "app/src/main/AndroidManifest.xml", manTxt, `Register ${className}`, branch);
         }
       } catch {}
-      state.ghWizardOpen = false; showToast(`${className} created!`, "success");
-      await window.refreshGhTree(); await window.openGhIdeFile(`app/src/main/java/${pkgPath}/${className}.java`, true);
+      state.ghWizardOpen = false;
+      showToast(`${className} created!`, "success");
+      await window.refreshGhTree();
+      await window.openGhIdeFile(`app/src/main/java/${pkgPath}/${className}.java`, true);
     } catch (e) { showToast(e.message, "error"); }
   };
 
   window.openLibraryManager = async () => {
-    state.ghLibModalOpen = true; state.ghGradleFileText = ""; render();
-    try { state.ghGradleFileText = decodeURIComponent(escape(atob(((await ghFetch(`/repos/${state.selectedGhRepo}/contents/app/build.gradle?ref=${state.ghBranch || "main"}`)).content || "").replace(/\n/g, "")))); } catch { state.ghGradleFileText = DEFAULT_ANDROID_TEMPLATES["app/build.gradle"]; }
+    state.ghLibModalOpen = true;
+    state.ghGradleFileText = "";
+    render();
+    try {
+      const f = await ghFetch(`/repos/${state.selectedGhRepo}/contents/app/build.gradle?ref=${state.ghBranch || "main"}`);
+      state.ghGradleFileText = fromBase64Utf8(f.content);
+    } catch {
+      state.ghGradleFileText = DEFAULT_ANDROID_TEMPLATES["app/build.gradle"];
+    }
     render();
   };
 
   window.addGradleLibrary = async (libId) => {
-    const lib = ANDROID_LIBRARIES.find((l) => l.id === libId); if (!lib) return;
+    const lib = ANDROID_LIBRARIES.find((l) => l.id === libId);
+    if (!lib) return;
     let txt = state.ghGradleFileText || DEFAULT_ANDROID_TEMPLATES["app/build.gradle"];
     if (txt.includes(lib.impl.split("\n")[0])) return showToast("Library already added!", "info");
     txt = txt.includes("dependencies {") ? txt.replace("dependencies {", `dependencies {\n    ${lib.impl}`) : txt + `\ndependencies {\n    ${lib.impl}\n}\n`;
-    try { await ghPutFileSafe(state.selectedGhRepo, "app/build.gradle", txt, `Add ${lib.name}`, state.ghBranch || "main"); state.ghGradleFileText = txt; showToast(`Added ${lib.name}!`, "success"); render(); } catch (e) { showToast(e.message, "error"); }
+    try {
+      await ghPutFileSafe(state.selectedGhRepo, "app/build.gradle", txt, `Add ${lib.name}`, state.ghBranch || "main");
+      state.ghGradleFileText = txt;
+      showToast(`Added ${lib.name}!`, "success");
+      render();
+    } catch (e) { showToast(e.message, "error"); }
   };
 
   window.enableCloudReleaseSigning = async () => {
@@ -549,157 +644,363 @@ export function renderProGithubBuild(ctx) {
       await ghFetch(`/repos/${state.selectedGhRepo}/actions/secrets/WEVLO_KEY_PASS`, { method: "PUT", body: JSON.stringify({ encrypted_value: await encryptGithubSecret(pk.key, pass), key_id: pk.key_id }) });
       await ghFetch(`/repos/${state.selectedGhRepo}/actions/secrets/WEVLO_KEY_ALIAS`, { method: "PUT", body: JSON.stringify({ encrypted_value: await encryptGithubSecret(pk.key, ks.alias || "key0"), key_id: pk.key_id }) });
       localStorage.setItem("wevlo_cloud_signed_" + state.selectedGhRepo, "1");
-      showToast("Cloud Release Signing enabled!", "success"); render();
+      showToast("Cloud Release Signing enabled!", "success");
+      render();
     } catch (e) { showToast(e.message, "error"); }
   };
 
   function updateXmlDomAndSync(mutator) {
     try {
       const doc = new DOMParser().parseFromString(state.ghIdeContent || "<LinearLayout/>", "text/xml");
-      mutator(doc); state.ghIdeContent = new XMLSerializer().serializeToString(doc); state.ghIdeDirty = true; render();
+      mutator(doc);
+      state.ghIdeContent = new XMLSerializer().serializeToString(doc);
+      state.ghIdeDirty = true;
+      render();
     } catch (e) { showToast(e.message, "error"); }
   }
   window.selectXmlWidget = (idx) => { state.xmlSelIdx = idx; render(); };
   window.addXmlWidget = (tag) => updateXmlDomAndSync((doc) => {
-    const el = doc.createElement(tag); el.setAttribute("android:layout_width", tag === "ImageView" ? "80dp" : "match_parent"); el.setAttribute("android:layout_height", tag === "ImageView" ? "80dp" : "wrap_content"); el.setAttribute("android:text", tag === "Button" ? "New Button" : "New " + tag); doc.documentElement.appendChild(el);
+    const el = doc.createElement(tag);
+    el.setAttribute("android:layout_width", tag === "ImageView" ? "80dp" : "match_parent");
+    el.setAttribute("android:layout_height", tag === "ImageView" ? "80dp" : "wrap_content");
+    el.setAttribute("android:text", tag === "Button" ? "New Button" : "New " + tag);
+    doc.documentElement.appendChild(el);
   });
   window.updateXmlWidgetProp = (idx, prop, val) => {
     const doc = new DOMParser().parseFromString(state.ghIdeContent, "text/xml");
     const widgets = Array.from(doc.querySelectorAll("TextView, Button, EditText, ImageView, Switch, CheckBox"));
-    if (widgets[idx]) { widgets[idx].setAttribute("android:" + prop, val); state.ghIdeContent = new XMLSerializer().serializeToString(doc); state.ghIdeDirty = true; document.getElementById("saveDirtyDot")?.classList.remove("hidden"); }
+    if (widgets[idx]) {
+      widgets[idx].setAttribute("android:" + prop, val);
+      state.ghIdeContent = new XMLSerializer().serializeToString(doc);
+      state.ghIdeDirty = true;
+      document.getElementById("saveDirtyDot")?.classList.remove("hidden");
+    }
   };
-  window.deleteXmlWidget = (idx) => updateXmlDomAndSync((doc) => { Array.from(doc.querySelectorAll("TextView, Button, EditText, ImageView, Switch, CheckBox"))[idx]?.remove(); state.xmlSelIdx = 0; });
+  window.deleteXmlWidget = (idx) => updateXmlDomAndSync((doc) => {
+    Array.from(doc.querySelectorAll("TextView, Button, EditText, ImageView, Switch, CheckBox"))[idx]?.remove();
+    state.xmlSelIdx = 0;
+  });
 
   window.execTerminalInput = (forcedCmd = null) => {
     const inp = document.getElementById("ghTermInput"), cmd = forcedCmd !== null ? forcedCmd : inp?.value || "";
-    if (!cmd.trim()) return; if (inp && forcedCmd === null) inp.value = "";
+    if (!cmd.trim()) return;
+    if (inp && forcedCmd === null) inp.value = "";
     const activeFw = state.ghManualFw || detectFramework(state.ghTreeFiles || []);
     state.ghTerminalLines.push(`wevlo:~$ ${cmd}`);
-    state.ghTerminalLines.push(...runTerminalCommand(cmd, { treeFiles: state.ghTreeFiles || [], activePath: state.ghIdeActivePath || "", activeContent: state.ghIdeContent || "", branch: state.ghBranch || "main", framework: activeFw, triggerBuild: () => window.startPersistentIdeBuild(), clearTerminal: () => { state.ghTerminalLines = []; } }));
+    state.ghTerminalLines.push(...runTerminalCommand(cmd, {
+      treeFiles: state.ghTreeFiles || [],
+      activePath: state.ghIdeActivePath || "",
+      activeContent: state.ghIdeContent || "",
+      branch: state.ghBranch || "main",
+      framework: activeFw,
+      triggerBuild: () => window.startPersistentIdeBuild(),
+      clearTerminal: () => { state.ghTerminalLines = []; }
+    }));
     render();
   };
 
   window.confirmCreateGhNewProject = async () => {
-    const name = document.getElementById("ghModalRepoName")?.value.trim();
-    if (!name || !state.githubToken) return showToast("Please enter a repository name and connect GitHub!", "error");
+    const rawName = document.getElementById("ghModalRepoName")?.value.trim();
+    if (!rawName) return showToast("Please enter a repository name!", "error");
+    if (!state.githubToken) return showToast("Please connect GitHub first!", "error");
+    const name = sanitizeRepoName(rawName);
     const lang = state.newRepoLang || "java";
     try {
-      showToast(`Creating ${lang.toUpperCase()} project...`, "info");
+      showToast(`Creating ${lang.toUpperCase()} project "${name}"...`, "info");
       const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name, private: state.newRepoPriv === "private", auto_init: true }) });
-      state.ghBranch = r.default_branch || "main"; state.selectedGhRepo = r.full_name; state.ghManualFw = lang;
+      state.ghBranch = r.default_branch || "main";
+      state.selectedGhRepo = r.full_name;
+      state._loadedIdeRepo = r.full_name;
+      state.ghOpenTabs = [];
+      state.ghIdeActivePath = "";
+      state.ghManualFw = lang;
       if (state.newRepoStarter) {
         const starter = FRAMEWORK_STARTERS[lang] || FRAMEWORK_STARTERS.java;
-        for (const [p, c] of Object.entries(starter)) {
+        const entries = Object.entries(starter);
+        for (let i = 0; i < entries.length; i++) {
+          const [p, c] = entries[i];
+          showToast(`Creating files (${i + 1}/${entries.length})...`, "info");
           await ghPutFileSafe(r.full_name, p, c, `Init ${lang} ${p}`, state.ghBranch);
         }
         await ghPutFileSafe(r.full_name, ".github/workflows/wevlo-build.yml", generateWorkflowYaml(state.ghBranch, "assembleDebug", "1.0", false, lang), `Add ${lang} workflow`, state.ghBranch);
       }
-      state.ghNewProjModalOpen = false; persistGhSession(); await loadGithubRepos(); await window.openGhVsCodeIde(r.full_name);
+      state.ghNewProjModalOpen = false;
+      persistGhSession();
+      await loadGithubRepos();
+      await window.openGhVsCodeIde(r.full_name, state.ghBranch);
     } catch (e) { showToast(e.message, "error"); }
   };
 
-  window.handleImportFiles = async (e) => {
-    const files = Array.from(e.target.files || []); if (!files.length || !state.githubToken) return;
-    const repoName = prompt("Repository name for imported files:", "imported-app"); if (!repoName) return;
+  window.uploadFilesToCurrentRepo = async (e, targetPrefix = "") => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    if (!state.githubToken || !state.selectedGhRepo) {
+      return showToast("Please select a GitHub repository first!", "error");
+    }
+    const branch = state.ghBranch || "main";
+    const cleanPrefix = targetPrefix ? targetPrefix.replace(/^\/+|\/+$/g, "") + "/" : "";
+    state.ghImportMenuOpen = false;
+    state.ghItemMenu = null;
     try {
-      const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: repoName.trim(), private: true, auto_init: true }) });
+      let lastPath = "";
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const rel = f.webkitRelativePath ? f.webkitRelativePath.split("/").slice(1).join("/") : f.name;
+        const destPath = cleanPrefix + (rel || f.name);
+        if (!destPath || destPath.startsWith(".git/")) continue;
+        showToast(`Uploading (${i + 1}/${files.length}): ${f.name}`, "info");
+        const b64 = arrayBufferToBase64(await f.arrayBuffer());
+        await ghPutFileSafe(state.selectedGhRepo, destPath, b64, `Upload ${destPath}`, branch, true);
+        lastPath = destPath;
+      }
+      showToast(`Uploaded ${files.length} file(s) to ${state.selectedGhRepo}!`, "success");
+      if (state.ghIdeOpen) {
+        await window.refreshGhTree();
+        if (lastPath) await window.openGhIdeFile(lastPath, false);
+      } else {
+        await window.openGhVsCodeIde(state.selectedGhRepo, branch);
+      }
+    } catch (err) {
+      showToast("Upload error: " + err.message, "error");
+    }
+  };
+
+  window.handleImportFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    if (!state.githubToken) return showToast("Please connect GitHub first!", "error");
+    const rawName = prompt("New Repository name for imported files:", "imported-app");
+    if (!rawName) return;
+    const repoName = sanitizeRepoName(rawName);
+    try {
+      showToast(`Creating repository "${repoName}"...`, "info");
+      const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: repoName, private: true, auto_init: true }) });
       const br = r.default_branch || "main";
-      for (const f of files.slice(0, 60)) {
+      await new Promise((res) => setTimeout(res, 600));
+      let uploaded = 0;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
         const relPath = f.webkitRelativePath ? f.webkitRelativePath.split("/").slice(1).join("/") : f.name;
         if (!relPath || relPath.startsWith(".git/")) continue;
-        let bin = ""; new Uint8Array(await f.arrayBuffer()).forEach((b) => (bin += String.fromCharCode(b)));
-        await ghPutFileSafe(r.full_name, relPath, btoa(bin), `Import ${relPath}`, br, true);
+        showToast(`Uploading (${i + 1}/${files.length}): ${relPath}`, "info");
+        const b64 = arrayBufferToBase64(await f.arrayBuffer());
+        await ghPutFileSafe(r.full_name, relPath, b64, `Import ${relPath}`, br, true);
+        uploaded++;
       }
-      state.ghImportMenuOpen = false; state.selectedGhRepo = r.full_name; state.ghBranch = br; persistGhSession(); await loadGithubRepos(); await window.openGhVsCodeIde(r.full_name);
-    } catch (err) { showToast(err.message, "error"); }
+      state.ghImportMenuOpen = false;
+      state.selectedGhRepo = r.full_name;
+      state._loadedIdeRepo = r.full_name;
+      state.ghBranch = br;
+      state.ghOpenTabs = [];
+      state.ghIdeActivePath = "";
+      persistGhSession();
+      await loadGithubRepos();
+      showToast(`Imported ${uploaded} file(s)!`, "success");
+      await window.openGhVsCodeIde(r.full_name, br);
+    } catch (err) { showToast("Import failed: " + err.message, "error"); }
   };
 
   window.handleImportZip = async (e) => {
-    const file = e.target.files?.[0]; if (!file || !state.githubToken) return;
-    const repoName = prompt("New Repository name for ZIP:", file.name.replace(/\.zip$/i, "").replace(/[^a-zA-Z0-9-_]/g, "-")); if (!repoName) return;
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!state.githubToken) return showToast("Please connect GitHub first!", "error");
+    const rawName = prompt("New Repository name for ZIP:", file.name.replace(/\.zip$/i, ""));
+    if (!rawName) return;
+    const repoName = sanitizeRepoName(rawName);
     try {
-      const JSZip = await ensureJSZip(), zip = await JSZip.loadAsync(file);
-      const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: repoName.trim(), private: true, auto_init: true }) });
+      showToast("Reading ZIP archive...", "info");
+      const JSZip = await ensureJSZip();
+      const zip = await JSZip.loadAsync(file);
+      const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: repoName, private: true, auto_init: true }) });
       const br = r.default_branch || "main";
-      for (const entry of Object.values(zip.files).filter((z) => !z.dir && !z.name.startsWith("__MACOSX") && !z.name.startsWith(".git/")).slice(0, 60)) {
+      await new Promise((res) => setTimeout(res, 600));
+      const entries = Object.values(zip.files).filter((z) => !z.dir && !z.name.startsWith("__MACOSX") && !z.name.startsWith(".git/"));
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        showToast(`Uploading (${i + 1}/${entries.length}): ${entry.name}`, "info");
         await ghPutFileSafe(r.full_name, entry.name, await entry.async("base64"), `Import ${entry.name}`, br, true);
       }
-      state.ghImportMenuOpen = false; state.selectedGhRepo = r.full_name; state.ghBranch = br; persistGhSession(); await loadGithubRepos(); await window.openGhVsCodeIde(r.full_name);
-    } catch (err) { showToast(err.message, "error"); }
+      state.ghImportMenuOpen = false;
+      state.selectedGhRepo = r.full_name;
+      state._loadedIdeRepo = r.full_name;
+      state.ghBranch = br;
+      state.ghOpenTabs = [];
+      state.ghIdeActivePath = "";
+      persistGhSession();
+      await loadGithubRepos();
+      showToast(`ZIP imported (${entries.length} files)!`, "success");
+      await window.openGhVsCodeIde(r.full_name, br);
+    } catch (err) { showToast("ZIP import failed: " + err.message, "error"); }
   };
 
   window.generateRandomKeyPass = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#"; let p = "";
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#";
+    let p = "";
     for (let i = 0; i < 16; i++) p += chars[Math.floor(Math.random() * chars.length)];
-    const inp = document.getElementById("ksPassInput"); if (inp) inp.value = p;
+    const inp = document.getElementById("ksPassInput");
+    if (inp) inp.value = p;
   };
   window.confirmCreateKeystore = async () => {
     const name = document.getElementById("ksName")?.value.trim() || "Wevlo App", org = document.getElementById("ksOrg")?.value.trim() || "", country = document.getElementById("ksCountry")?.value.trim() || "US", years = document.getElementById("ksYears")?.value.trim() || "25", alias = document.getElementById("ksAlias")?.value.trim() || "key0", pass = document.getElementById("ksPassInput")?.value || "";
     if (pass.length < 6) return showToast("Password must be at least 6 characters!", "error");
     const kp = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
     localStorage.setItem("wevlo_signing_key", JSON.stringify({ name, org, country, years, alias, createdAt: new Date().toISOString(), jwk: await crypto.subtle.exportKey("jwk", kp.privateKey) }));
-    state.ghKeystoreModalOpen = false; render(); showToast(`Keystore "${alias}" created!`, "success");
+    state.ghKeystoreModalOpen = false;
+    render();
+    showToast(`Keystore "${alias}" created!`, "success");
   };
 
   window.toggleGhFolder = (path) => { state.ghExpandedFolders[path] = !state.ghExpandedFolders[path]; render(); };
   window.openGhNewFileModal = (prefix = "app/") => { state.ghNewFilePrefix = prefix; state.ghNewFileModalOpen = true; state.ghItemMenu = null; render(); };
   window.openGhItemMenu = (type, path) => { state.ghItemMenu = { type, path }; render(); };
   window.deleteGhRepoFile = async (path) => {
-    state.ghItemMenu = null; if (!confirm(`Delete ${path}?`)) return;
-    try { const br = state.ghBranch || "main", fData = await ghFetch(`/repos/${state.selectedGhRepo}/contents/${path}?ref=${br}`); await ghFetch(`/repos/${state.selectedGhRepo}/contents/${path}`, { method: "DELETE", body: JSON.stringify({ message: `Delete ${path}`, sha: fData.sha, branch: br }) }); await window.refreshGhTree(); } catch (e) { showToast(e.message, "error"); }
+    state.ghItemMenu = null;
+    if (!confirm(`Delete ${path}?`)) return;
+    try {
+      const br = state.ghBranch || "main";
+      const fData = await ghFetch(`/repos/${state.selectedGhRepo}/contents/${path}?ref=${br}`);
+      await ghFetch(`/repos/${state.selectedGhRepo}/contents/${path}`, { method: "DELETE", body: JSON.stringify({ message: `Delete ${path}`, sha: fData.sha, branch: br }) });
+      state.ghOpenTabs = state.ghOpenTabs.filter((t) => t !== path);
+      if (state.ghIdeActivePath === path) state.ghIdeActivePath = state.ghOpenTabs[0] || "";
+      await window.refreshGhTree();
+      showToast(`Deleted ${path}`, "info");
+    } catch (e) { showToast(e.message, "error"); }
   };
   window.createGhNewFileConfirm = async () => {
-    const path = document.getElementById("ghNewFilePathInput")?.value.trim(); if (!path || path.endsWith("/")) return showToast("Enter a valid file path!", "error");
-    try { const def = DEFAULT_ANDROID_TEMPLATES[path] || DEFAULT_ANDROID_TEMPLATES[path.split("/").pop()] || "// Created with Wevlo AIDE\n"; await ghPutFileSafe(state.selectedGhRepo, path, def, `Create ${path}`, state.ghBranch || "main"); state.ghNewFileModalOpen = false; await window.refreshGhTree(); await window.openGhIdeFile(path); } catch (e) { showToast(e.message, "error"); }
+    const path = document.getElementById("ghNewFilePathInput")?.value.trim();
+    if (!path || path.endsWith("/")) return showToast("Enter a valid file path!", "error");
+    try {
+      const def = DEFAULT_ANDROID_TEMPLATES[path] || DEFAULT_ANDROID_TEMPLATES[path.split("/").pop()] || "// Created with Wevlo Studio\n";
+      await ghPutFileSafe(state.selectedGhRepo, path, def, `Create ${path}`, state.ghBranch || "main");
+      state.ghNewFileModalOpen = false;
+      await window.refreshGhTree();
+      await window.openGhIdeFile(path);
+    } catch (e) { showToast(e.message, "error"); }
   };
+
   window.refreshGhTree = async () => {
-    state.ghTreeLoading = true; render();
-    try { state.ghTreeFiles = ((await ghFetch(`/repos/${state.selectedGhRepo}/git/trees/${state.ghBranch || "main"}?recursive=1`)).tree || []).filter((t) => t.type === "blob").slice(0, 120); } catch {}
-    state.ghTreeLoading = false; render();
+    if (!state.selectedGhRepo) return;
+    state.ghTreeLoading = true;
+    state.ghTreeError = "";
+    render();
+    try {
+      let br = state.ghBranch || "main";
+      try {
+        const res = await ghFetch(`/repos/${state.selectedGhRepo}/git/trees/${br}?recursive=1`);
+        state.ghTreeFiles = (res.tree || []).filter((t) => t.type === "blob").slice(0, 150);
+      } catch (firstErr) {
+        try {
+          const repoInfo = await ghFetch(`/repos/${state.selectedGhRepo}`);
+          const realBr = repoInfo.default_branch || "main";
+          if (realBr !== br) {
+            state.ghBranch = realBr;
+            const res2 = await ghFetch(`/repos/${state.selectedGhRepo}/git/trees/${realBr}?recursive=1`);
+            state.ghTreeFiles = (res2.tree || []).filter((t) => t.type === "blob").slice(0, 150);
+          } else {
+            throw firstErr;
+          }
+        } catch (err2) {
+          state.ghTreeFiles = [];
+          state.ghTreeError = err2.message || "Repository may be empty.";
+        }
+      }
+    } finally {
+      state.ghTreeLoading = false;
+      render();
+    }
   };
-  window.openGhVsCodeIde = async (forcedRepo = null) => {
+
+  window.selectGhRepo = (fullName, defaultBranch = null) => {
+    state.selectedGhRepo = fullName;
+    if (defaultBranch) {
+      state.ghBranch = defaultBranch;
+    } else {
+      const found = (state.githubRepos || []).find((r) => r.full_name === fullName);
+      if (found?.default_branch) state.ghBranch = found.default_branch;
+    }
+    if (state._loadedIdeRepo !== fullName) {
+      state.ghOpenTabs = [];
+      state.ghIdeActivePath = "";
+      state.ghManualFw = null;
+      state.ghTreeFiles = [];
+    }
+    persistGhSession();
+  };
+
+  window.openGhVsCodeIde = async (forcedRepo = null, forcedBranch = null) => {
     if (!state.githubToken) return showToast("Please connect GitHub first!", "error");
     const repo = forcedRepo || document.getElementById("ghRepoSelect")?.value || state.selectedGhRepo;
-    if (!repo) { state.ghNewProjModalOpen = true; return render(); }
-    state.selectedGhRepo = repo; state.ghIdeOpen = true; state.ghNavMenuOpen = false;
-    if (!state.ghMobileTab) state.ghMobileTab = "files";
+    if (!repo) {
+      state.ghNewProjModalOpen = true;
+      return render();
+    }
+    if (state._loadedIdeRepo !== repo) {
+      state.ghOpenTabs = [];
+      state.ghIdeActivePath = "";
+      state.ghManualFw = null;
+      state.ghTreeFiles = [];
+      state._loadedIdeRepo = repo;
+    }
+    window.selectGhRepo(repo, forcedBranch);
+    state.ghIdeOpen = true;
+    state.ghNavMenuOpen = false;
+    state.ghMobileTab = "files";
     state.ghIdeDirty = false;
     persistGhSession();
     await window.refreshGhTree();
     const list = state.ghTreeFiles || [];
-    const targetFile = (state.ghIdeActivePath && list.find((f) => f.path === state.ghIdeActivePath)) || list.find((f) => f.path === "lib/main.dart" || f.path === "main.py" || f.path === "www/index.html" || f.path.endsWith("MainActivity.kt") || f.path.endsWith("MainActivity.java")) || list[0];
+    const targetFile =
+      (state.ghIdeActivePath && list.find((f) => f.path === state.ghIdeActivePath)) ||
+      list.find((f) => f.path === "lib/main.dart" || f.path === "main.py" || f.path === "www/index.html" || f.path.endsWith("MainActivity.kt") || f.path.endsWith("MainActivity.java")) ||
+      list[0];
     if (targetFile) await window.openGhIdeFile(targetFile.path, false);
   };
+
   window.openGhIdeFile = async (path, switchToEditor = true) => {
-    state.ghIdeActivePath = path; if (!state.ghOpenTabs.includes(path)) state.ghOpenTabs.push(path);
-    state.ghIdeFileLoading = true; state.ghIdeDirty = false; if (switchToEditor) state.ghMobileTab = "editor";
-    persistGhSession(); render();
+    state.ghIdeActivePath = path;
+    if (!state.ghOpenTabs.includes(path)) state.ghOpenTabs.push(path);
+    state.ghIdeFileLoading = true;
+    state.ghIdeDirty = false;
+    if (switchToEditor) state.ghMobileTab = "editor";
+    persistGhSession();
+    render();
     try {
       const data = await ghFetch(`/repos/${state.selectedGhRepo}/contents/${path}?ref=${state.ghBranch || "main"}`);
       state.ghIdeFileSha = data.sha;
-      const cleanB64 = (data.content || "").replace(/\n/g, "");
+      const cleanB64 = (data.content || "").replace(/\s/g, "");
       if (isImageFile(path)) {
         const ext = path.split(".").pop().toLowerCase();
         const mime = ext === "jpg" ? "jpeg" : ext;
         state.ghIdeContent = `data:image/${mime};base64,${cleanB64}`;
       } else {
-        state.ghIdeContent = decodeURIComponent(escape(atob(cleanB64)));
+        state.ghIdeContent = fromBase64Utf8(cleanB64);
       }
     } catch (e) {
       state.ghIdeContent = "// Error: " + e.message;
     }
-    state.ghIdeFileLoading = false; render();
+    state.ghIdeFileLoading = false;
+    render();
   };
+
   window.closeGhTab = (path) => {
     state.ghOpenTabs = state.ghOpenTabs.filter((t) => t !== path);
-    if (state.ghIdeActivePath === path) { state.ghIdeActivePath = state.ghOpenTabs[state.ghOpenTabs.length - 1] || ""; if (state.ghIdeActivePath) window.openGhIdeFile(state.ghIdeActivePath, false); }
-    persistGhSession(); render();
+    if (state.ghIdeActivePath === path) {
+      state.ghIdeActivePath = state.ghOpenTabs[state.ghOpenTabs.length - 1] || "";
+      if (state.ghIdeActivePath) window.openGhIdeFile(state.ghIdeActivePath, false);
+    }
+    persistGhSession();
+    render();
   };
+
   window.saveGhIdeFile = async () => {
     if (!state.selectedGhRepo || !state.ghIdeActivePath || isImageFile(state.ghIdeActivePath)) return;
     try {
       const res = await ghPutFileSafe(state.selectedGhRepo, state.ghIdeActivePath, state.ghIdeContent, `Update ${state.ghIdeActivePath}`, state.ghBranch || "main");
-      state.ghIdeFileSha = res.content?.sha; state.ghIdeDirty = false;
+      state.ghIdeFileSha = res.content?.sha;
+      state.ghIdeDirty = false;
       if (state.activeBuild) {
         state.activeBuild.compilerErrors = [];
         saveActiveBuild();
@@ -709,7 +1010,13 @@ export function renderProGithubBuild(ctx) {
       showToast(`Saved ${state.ghIdeActivePath.split("/").pop()}!`, "success");
     } catch (e) { showToast(e.message, "error"); }
   };
-  window.insertGhSymbol = (sym) => { const cm = window.__wevloCM; if (!cm) return; cm.replaceSelection(sym === "TAB" ? "  " : sym); cm.focus(); };
+
+  window.insertGhSymbol = (sym) => {
+    const cm = window.__wevloCM;
+    if (!cm) return;
+    cm.replaceSelection(sym === "TAB" ? "  " : sym);
+    cm.focus();
+  };
   window.switchPageFromIde = (route) => {
     state.ghNavMenuOpen = false;
     state.ghIdeOpen = false;
@@ -730,25 +1037,51 @@ export function renderProGithubBuild(ctx) {
     const tab = state.ghMobileTab || "files";
     const treeRoot = buildNestedTree(files);
     const activeIsImg = isImageFile(activePath);
-    const issues = analyzeProjectIssues({ treeFiles: files, activePath: activeIsImg ? "" : activePath, activeContent: activeIsImg ? "" : fileCode, branch: state.ghBranch || "main", compilerErrors: state.activeBuild?.compilerErrors || [], framework: activeFw });
+    const issues = analyzeProjectIssues({
+      treeFiles: files,
+      activePath: activeIsImg ? "" : activePath,
+      activeContent: activeIsImg ? "" : fileCode,
+      branch: state.ghBranch || "main",
+      compilerErrors: state.activeBuild?.compilerErrors || [],
+      framework: activeFw
+    });
     const ab = state.activeBuild;
     const isXmlLayout = activePath.endsWith(".xml") && !activePath.endsWith("AndroidManifest.xml");
-    const gradleTasks = activeFw === "flutter"
-      ? [["assembleDebug", "Flutter Debug APK"], ["assembleRelease", "Flutter Release APK"], ["bundleRelease", "Flutter Play Store AAB"]]
-      : activeFw === "python"
-      ? [["assembleDebug", "Buildozer Python Debug APK"]]
-      : [["assembleDebug", "APK • Debug (installable)"], ["assembleRelease", "APK • Release"], ["bundleRelease", "AAB • Release (Play Store)"], ["assembleRelease + bundleRelease", "APK + AAB • Release"]];
+    const gradleTasks =
+      activeFw === "flutter"
+        ? [["assembleDebug", "Flutter Debug APK"], ["assembleRelease", "Flutter Release APK"], ["bundleRelease", "Flutter Play Store AAB"]]
+        : activeFw === "python"
+        ? [["assembleDebug", "Buildozer Python Debug APK"]]
+        : [["assembleDebug", "APK • Debug (installable)"], ["assembleRelease", "APK • Release"], ["bundleRelease", "AAB • Release (Play Store)"], ["assembleRelease + bundleRelease", "APK + AAB • Release"]];
     const curTaskDesc = (gradleTasks.find(([t]) => t === state.ghGradleTask) || gradleTasks[0])[1];
 
     if (tab === "editor" && !activeIsImg && state.ghEditorView !== "visual" && !state.ghIdeFileLoading && !state.ghWizardOpen && !state.ghLibModalOpen) {
       const errLines = issues.filter((i) => i.file === activePath && i.line).map((i) => i.line);
       requestAnimationFrame(() => {
         mountCodeMirror({
-          hostId: "ghCmHost", value: fileCode, filePath: activePath, errorLines: errLines,
-          onChange: (val) => { state.ghIdeContent = val; if (!state.ghIdeDirty) { state.ghIdeDirty = true; document.getElementById("saveDirtyDot")?.classList.remove("hidden"); document.getElementById("editorTabDot")?.classList.remove("hidden"); } },
-          onCursor: (ln, col) => { const el = document.getElementById("ghCursorInfo"); if (el) el.textContent = `Ln ${ln}, Col ${col}`; }
+          hostId: "ghCmHost",
+          value: fileCode,
+          filePath: activePath,
+          errorLines: errLines,
+          onChange: (val) => {
+            state.ghIdeContent = val;
+            if (!state.ghIdeDirty) {
+              state.ghIdeDirty = true;
+              document.getElementById("saveDirtyDot")?.classList.remove("hidden");
+              document.getElementById("editorTabDot")?.classList.remove("hidden");
+            }
+          },
+          onCursor: (ln, col) => {
+            const el = document.getElementById("ghCursorInfo");
+            if (el) el.textContent = `Ln ${ln}, Col ${col}`;
+          }
         }).then((cm) => {
-          if (cm && state.pendingJumpLine) { const target = Math.max(0, state.pendingJumpLine - 1); cm.setCursor(target, 0); cm.scrollIntoView({ line: target, ch: 0 }, 120); state.pendingJumpLine = null; }
+          if (cm && state.pendingJumpLine) {
+            const target = Math.max(0, state.pendingJumpLine - 1);
+            cm.setCursor(target, 0);
+            cm.scrollIntoView({ line: target, ch: 0 }, 120);
+            state.pendingJumpLine = null;
+          }
         });
       });
     }
@@ -770,7 +1103,8 @@ export function renderProGithubBuild(ctx) {
           ${state.ghNavMenuOpen ? `<div class="absolute left-3 top-14 z-50 w-56 bg-[#1e1a3a] border border-[#3a3469] rounded-2xl shadow-2xl p-2 space-y-1 text-xs font-bold">
             <button onclick="switchPageFromIde('#/')" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10">🏠 Dashboard</button>
             <button onclick="switchPageFromIde('#/projects')" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10">📁 My Projects</button>
-            <button onclick="switchPageFromIde('#/wallet')" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10">💳 Wallet</button>
+            <button onclick="switchPageFromIde('#/editor')" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10">💻 Web Editor</button>
+            <button onclick="switchPageFromIde('#/web2app')" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10">🌐 Website to App</button>
             <button onclick="switchPageFromIde('#/docs')" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10">📖 Documentation</button>
             <button onclick="state.ghNavMenuOpen=false; state.ghIdeOpen=false; render()" class="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 text-purple-300">⚙ Change Repository</button>
           </div>` : ""}
@@ -779,7 +1113,36 @@ export function renderProGithubBuild(ctx) {
         ${ab && ab.status === "running" ? `<button onclick="state.ghMobileTab='output'; state.ghOutputSubTab='output'; render()" class="bg-purple-900/50 border-b border-purple-500/40 px-3 py-1.5 flex items-center justify-between text-xs shrink-0"><span class="flex items-center gap-2 font-bold text-purple-200"><span class="spinner"></span> Building ${ab.framework?.toUpperCase() || ""} (${ab.progress}%)...</span><span class="text-purple-300 underline font-bold">Output →</span></button>` : ""}
 
         <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
-          ${tab === "files" ? `<div class="flex-1 overflow-y-auto p-3.5 space-y-3"><div class="flex items-center justify-between"><span class="font-extrabold text-base">Project Explorer</span><div class="flex items-center gap-2"><button onclick="openGhNewFileModal('')" class="p-1.5 rounded-lg hover:bg-white/10"><i data-lucide="file-plus" class="w-4 h-4"></i></button><button onclick="refreshGhTree()" class="p-1.5 rounded-lg hover:bg-white/10"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button></div></div><div class="bg-[#1b1836] border border-[#2d2854] rounded-2xl p-3 flex items-center justify-between gap-2"><div class="flex items-center gap-2.5 min-w-0"><span class="w-8 h-8 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center shrink-0"><i data-lucide="github" class="w-4 h-4"></i></span><div class="min-w-0"><p class="font-extrabold text-sm truncate">${repoName}</p><p class="text-[10px] text-purple-300">${fwInfo.name}</p></div></div><a href="https://github.com/${state.selectedGhRepo}" target="_blank" class="border border-[#3a3469] bg-[#242047] px-3 py-1.5 rounded-xl text-xs font-bold shrink-0">GitHub ↗</a></div>${state.ghTreeLoading ? `<div class="py-12 text-center"><span class="spinner"></span></div>` : `<div class="space-y-0.5">${renderFolderTreeHtml(treeRoot, "", state.ghExpandedFolders, activePath)}</div>`}</div>` : ""}
+          ${tab === "files" ? `<div class="flex-1 overflow-y-auto p-3.5 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-extrabold text-base">Project Explorer</span>
+              <div class="flex items-center gap-1.5">
+                <label class="px-2.5 py-1.5 rounded-xl bg-violet-600/25 border border-violet-500/40 text-violet-200 text-xs font-bold cursor-pointer inline-flex items-center gap-1 hover:bg-violet-600/40">
+                  <i data-lucide="upload" class="w-3.5 h-3.5"></i> Upload
+                  <input type="file" multiple class="hidden" onchange="uploadFilesToCurrentRepo(event, '')" />
+                </label>
+                <button onclick="openGhNewFileModal('')" title="New File" class="p-1.5 rounded-lg hover:bg-white/10"><i data-lucide="file-plus" class="w-4 h-4"></i></button>
+                <button onclick="refreshGhTree()" title="Refresh Files" class="p-1.5 rounded-lg hover:bg-white/10"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+              </div>
+            </div>
+            <div class="bg-[#1b1836] border border-[#2d2854] rounded-2xl p-3 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="w-8 h-8 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center shrink-0"><i data-lucide="github" class="w-4 h-4"></i></span>
+                <div class="min-w-0"><p class="font-extrabold text-sm truncate">${repoName}</p><p class="text-[10px] text-purple-300">${fwInfo.name} • ${files.length} files</p></div>
+              </div>
+              <a href="https://github.com/${state.selectedGhRepo}" target="_blank" class="border border-[#3a3469] bg-[#242047] px-3 py-1.5 rounded-xl text-xs font-bold shrink-0">GitHub ↗</a>
+            </div>
+            ${state.ghTreeLoading ? `<div class="py-12 text-center"><span class="spinner"></span></div>` : files.length === 0 ? `
+              <div class="p-6 rounded-2xl border border-dashed border-[#342f61] text-center space-y-3">
+                <p class="text-sm font-bold text-slate-200">No files found in "${state.ghBranch}"</p>
+                <p class="text-xs text-slate-400">${state.ghTreeError || "This repository is empty. Upload files or create a Hello World starter."}</p>
+                <div class="flex flex-wrap justify-center gap-2">
+                  <label class="btn-purple px-4 py-2 rounded-full text-xs font-bold cursor-pointer">↑ Upload Files<input type="file" multiple class="hidden" onchange="uploadFilesToCurrentRepo(event, '')" /></label>
+                  <button onclick="openGhNewFileModal('')" class="px-4 py-2 rounded-full bg-[#242047] text-xs font-bold">+ Create File</button>
+                  <button onclick="setupMissingFilesForLang('${activeFw}')" class="px-4 py-2 rounded-full bg-emerald-600/30 text-emerald-200 text-xs font-bold">⚡ Add ${fwInfo.name} Starter</button>
+                </div>
+              </div>` : `<div class="space-y-0.5">${renderFolderTreeHtml(treeRoot, "", state.ghExpandedFolders, activePath)}</div>`}
+          </div>` : ""}
 
           ${tab === "editor" ? `<div class="flex-1 flex flex-col min-h-0">
             <div class="bg-[#191632] px-2 pt-1.5 flex items-center justify-between border-b border-[#2b264e] shrink-0 gap-2">
@@ -792,7 +1155,9 @@ export function renderProGithubBuild(ctx) {
                 <button onclick="cmToolbarAct('copy')" class="px-2 py-1 rounded-lg bg-[#27234a] text-[10px] font-bold text-slate-200">Copy</button>
               </div>`}
             </div>
-            ${activeIsImg
+            ${!activePath
+              ? `<div class="flex-1 flex flex-col items-center justify-center p-6 text-center text-xs text-slate-400 gap-3"><p>No file selected.</p><button onclick="state.ghMobileTab='files'; render()" class="btn-purple px-4 py-2 rounded-full font-bold">Open Files Tab</button></div>`
+              : activeIsImg
               ? `<div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#18162b] gap-3"><img src="${fileCode}" alt="${activePath}" class="max-w-[220px] max-h-[220px] rounded-2xl border border-[#322e4a] bg-white/5 p-3 object-contain" /><p class="text-xs text-slate-300 font-bold">${activePath}</p><p class="text-[11px] text-slate-400">Binary image asset preview</p></div>`
               : state.ghEditorView === "visual" && isXmlLayout
               ? renderVisualXmlDesigner(fileCode, state.xmlSelIdx)
@@ -834,14 +1199,14 @@ export function renderProGithubBuild(ctx) {
 
         ${state.ghWizardOpen ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1b1833] border border-[#342f61] w-full max-w-md rounded-[26px] p-5 space-y-3.5 animate-slide-up text-xs"><div class="flex justify-between items-center"><h3 class="font-extrabold text-base">⚡ New Activity Wizard</h3><button onclick="state.ghWizardOpen=false; render()" class="p-1.5 rounded-full bg-[#2a254d]"><i data-lucide="x" class="w-4 h-4"></i></button></div><div><label class="font-bold">Activity Name</label><input id="wizActName" placeholder="ProfileActivity" class="w-full mt-1 bg-[#121024] border border-[#3b3569] rounded-xl px-3.5 py-2.5 text-white" /></div><div><label class="font-bold">Package Name</label><input id="wizPkgName" value="com.wevlo.app" class="w-full mt-1 bg-[#121024] border border-[#3b3569] rounded-xl px-3.5 py-2.5 text-white" /></div><button onclick="confirmCreateActivityWizard()" class="w-full btn-purple py-3 rounded-full font-bold text-sm">Create Activity + XML</button></div></div>` : ""}
         ${state.ghLibModalOpen ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1b1833] border border-[#342f61] w-full max-w-md max-h-[85vh] overflow-y-auto rounded-[26px] p-5 space-y-3 animate-slide-up text-xs"><div class="flex justify-between items-center"><h3 class="font-extrabold text-base">📦 Gradle Library Manager</h3><button onclick="state.ghLibModalOpen=false; render()" class="p-1.5 rounded-full bg-[#2a254d]"><i data-lucide="x" class="w-4 h-4"></i></button></div>${ANDROID_LIBRARIES.map((lib) => { const added = (state.ghGradleFileText || "").includes(lib.impl.split("\n")[0]); return `<div class="p-3 rounded-2xl bg-[#121024] border border-[#2c2754] flex items-center justify-between gap-2"><div><p class="font-bold text-white">${lib.name}</p><p class="text-[11px] text-slate-400">${lib.desc}</p></div><button onclick="addGradleLibrary('${lib.id}')" class="px-3 py-1.5 rounded-full font-bold shrink-0 ${added ? "bg-emerald-500/20 text-emerald-300" : "btn-purple"}">${added ? "✓ Added" : "+ Add"}</button></div>`; }).join("")}</div></div>` : ""}
-        ${state.ghItemMenu ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1b1833] border border-[#342f61] w-full max-w-sm rounded-[26px] p-5 space-y-2.5 animate-slide-up text-xs font-bold"><div class="flex justify-between items-center pb-1"><span class="truncate text-purple-300">${state.ghItemMenu.path}</span><button onclick="state.ghItemMenu=null; render()" class="p-1 rounded-full bg-[#2a254d]"><i data-lucide="x" class="w-4 h-4"></i></button></div>${state.ghItemMenu.type === "folder" ? `<button onclick="openGhNewFileModal('${state.ghItemMenu.path}/')" class="w-full text-left p-3 rounded-2xl bg-[#242047]">+ New file in this folder</button>` : `<button onclick="const p=state.ghItemMenu.path; state.ghItemMenu=null; openGhIdeFile(p)" class="w-full text-left p-3 rounded-2xl bg-[#242047]">Open in Editor</button><button onclick="deleteGhRepoFile('${state.ghItemMenu.path}')" class="w-full text-left p-3 rounded-2xl bg-rose-500/20 text-rose-300">Delete from GitHub</button>`}<button onclick="navigator.clipboard?.writeText('${state.ghItemMenu.path}'); state.ghItemMenu=null; render(); showToast('Copied!','success')" class="w-full text-left p-3 rounded-2xl bg-[#242047]">Copy path</button></div></div>` : ""}
+        ${state.ghItemMenu ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1b1833] border border-[#342f61] w-full max-w-sm rounded-[26px] p-5 space-y-2.5 animate-slide-up text-xs font-bold"><div class="flex justify-between items-center pb-1"><span class="truncate text-purple-300">${state.ghItemMenu.path}</span><button onclick="state.ghItemMenu=null; render()" class="p-1 rounded-full bg-[#2a254d]"><i data-lucide="x" class="w-4 h-4"></i></button></div>${state.ghItemMenu.type === "folder" ? `<button onclick="openGhNewFileModal('${state.ghItemMenu.path}/')" class="w-full text-left p-3 rounded-2xl bg-[#242047]">+ New file in this folder</button><label class="block w-full text-left p-3 rounded-2xl bg-[#242047] cursor-pointer">↑ Upload files into this folder<input type="file" multiple class="hidden" onchange="uploadFilesToCurrentRepo(event, '${state.ghItemMenu.path}')" /></label>` : `<button onclick="const p=state.ghItemMenu.path; state.ghItemMenu=null; openGhIdeFile(p)" class="w-full text-left p-3 rounded-2xl bg-[#242047]">Open in Editor</button><button onclick="deleteGhRepoFile('${state.ghItemMenu.path}')" class="w-full text-left p-3 rounded-2xl bg-rose-500/20 text-rose-300">Delete from GitHub</button>`}<button onclick="navigator.clipboard?.writeText('${state.ghItemMenu.path}'); state.ghItemMenu=null; render(); showToast('Copied!','success')" class="w-full text-left p-3 rounded-2xl bg-[#242047]">Copy path</button></div></div>` : ""}
         ${state.ghTaskPickerOpen ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1c1936] border border-[#342f61] w-full max-w-md rounded-3xl p-4 space-y-2 animate-slide-up">${gradleTasks.map(([t, d]) => `<button onclick="state.ghGradleTask='${t}'; state.ghTaskPickerOpen=false; render()" class="w-full text-left p-3.5 rounded-2xl ${state.ghGradleTask === t ? "bg-purple-600/30 border border-purple-500" : "hover:bg-white/5"}"><p class="font-extrabold text-sm text-white">${t}</p><p class="text-xs text-slate-400">${d}</p></button>`).join("")}</div></div>` : ""}
-        ${state.ghNewFileModalOpen ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1b1833] border border-[#342f61] w-full max-w-md rounded-[26px] p-5 space-y-4 animate-slide-up"><div class="flex justify-between items-center"><h3 class="font-extrabold text-lg text-white">New file</h3><button onclick="state.ghNewFileModalOpen=false; render()" class="w-8 h-8 rounded-full bg-[#2a254d] flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button></div><div><label class="text-xs text-slate-400">File path (folders separated by /)</label><input id="ghNewFilePathInput" value="${state.ghNewFilePrefix || ""}" class="w-full mt-1.5 bg-[#121024] border border-[#3b3569] rounded-2xl px-4 py-3 text-sm text-white focus:outline-none" /></div><div class="grid grid-cols-2 gap-3"><button onclick="state.ghNewFileModalOpen=false; render()" class="py-3 rounded-2xl bg-[#2a254d] font-bold text-sm">Cancel</button><button onclick="createGhNewFileConfirm()" class="py-3 rounded-2xl btn-purple font-bold text-sm">Create</button></div></div></div>` : ""}
+        ${state.ghNewFileModalOpen ? `<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="bg-[#1b1833] border border-[#342f61] w-full max-w-md rounded-[26px] p-5 space-y-4 animate-slide-up"><div class="flex justify-between items-center"><h3 class="font-extrabold text-lg text-white">New file</h3><button onclick="state.ghNewFileModalOpen=false; render()" class="w-8 h-8 rounded-full bg-[#2a254d] flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button></div><div><label class="text-xs text-slate-400">File path (folders separated by /)</label><input id="ghNewFilePathInput" value="${state.ghNewFilePrefix || ""}" placeholder="lib/screens/chat_screen.dart" class="w-full mt-1.5 bg-[#121024] border border-[#3b3569] rounded-2xl px-4 py-3 text-sm text-white focus:outline-none" /></div><div class="grid grid-cols-2 gap-3"><button onclick="state.ghNewFileModalOpen=false; render()" class="py-3 rounded-2xl bg-[#2a254d] font-bold text-sm">Cancel</button><button onclick="createGhNewFileConfirm()" class="py-3 rounded-2xl btn-purple font-bold text-sm">Create</button></div></div></div>` : ""}
       </div>`;
   }
 
   // ======================================================
-  // STEP 1 & 2: Multi-Language Project Selector + Resume Active IDE Banner
+  // STEP 1 & 2: Clickable Repository List + File Upload + New App Creator
   // ======================================================
   const repos = (state.githubRepos || []).filter((r) => r.full_name.toLowerCase().includes((state.repoFilter || "").toLowerCase()));
   const selectedLang = state.newRepoLang || "java";
@@ -850,69 +1215,107 @@ export function renderProGithubBuild(ctx) {
   return `
     <div class="max-w-5xl mx-auto px-4 py-5 space-y-5 relative">
       ${state.githubToken && state.selectedGhRepo ? `
-      <div class="wevlo-card p-4 bg-purple-600/10 border-purple-500/40 flex flex-wrap items-center justify-between gap-3">
+      <div class="wevlo-card p-4 bg-violet-600/10 border-violet-500/40 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-[11px] font-bold text-purple-600 uppercase">Active Workspace Ready</p>
+          <p class="text-[11px] font-bold text-violet-600 uppercase">Active Workspace Ready</p>
           <p class="font-extrabold text-sm">${state.selectedGhRepo} <span class="text-xs text-muted">(${state.ghBranch || "main"})</span></p>
         </div>
-        <button onclick="openGhVsCodeIde('${state.selectedGhRepo}')" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">⚡ Resume IDE →</button>
+        <div class="flex items-center gap-2">
+          <label class="px-4 py-2 rounded-full border border-violet-500/40 text-violet-700 text-xs font-bold cursor-pointer hover:bg-violet-500/10">
+            ↑ Upload Files
+            <input type="file" multiple class="hidden" onchange="uploadFilesToCurrentRepo(event, '')" />
+          </label>
+          <button onclick="openGhVsCodeIde('${state.selectedGhRepo}', '${state.ghBranch || "main"}')" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">⚡ Open IDE →</button>
+        </div>
       </div>` : ""}
 
       <div class="wevlo-card p-4 flex items-center justify-between text-xs font-bold">
-        <div class="flex items-center gap-1.5 text-purple-700"><span class="w-6 h-6 rounded-full btn-purple flex items-center justify-center">${state.githubToken ? "✓" : "1"}</span><span>Connect GitHub</span></div>
-        <div class="flex-1 h-0.5 bg-purple-200 mx-2"></div>
-        <div class="flex items-center gap-1.5 ${state.githubToken ? "text-purple-700" : "text-muted"}"><span class="w-6 h-6 rounded-full ${state.githubToken ? "btn-purple" : "bg-slate-200 text-slate-600"} flex items-center justify-center">2</span><span>Select Project</span></div>
+        <div class="flex items-center gap-1.5 text-violet-700"><span class="w-6 h-6 rounded-full btn-purple flex items-center justify-center">${state.githubToken ? "✓" : "1"}</span><span>Connect GitHub</span></div>
+        <div class="flex-1 h-0.5 bg-violet-200 mx-2"></div>
+        <div class="flex items-center gap-1.5 ${state.githubToken ? "text-violet-700" : "text-muted"}"><span class="w-6 h-6 rounded-full ${state.githubToken ? "btn-purple" : "bg-slate-200 text-slate-600"} flex items-center justify-center">2</span><span>Select Project</span></div>
         <div class="flex-1 h-0.5 bg-slate-200 mx-2"></div>
         <div class="flex items-center gap-1.5 text-muted"><span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center">3</span><span>Code &amp; Build</span></div>
       </div>
 
       <div class="wevlo-card p-4 space-y-2.5 text-xs">
-        <p class="font-extrabold text-sm">🚀 Quick Start New App by Language</p>
+        <p class="font-extrabold text-sm">🚀 New Hello World App by Language</p>
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          ${APP_FRAMEWORKS.map((fw) => `<button onclick="state.newRepoLang='${fw.id}'; state.ghNewProjModalOpen=true; render()" class="p-2.5 rounded-2xl border border-soft hover:border-purple-500 text-left transition"><p class="font-extrabold">${fw.badge}</p><p class="text-[10px] text-muted">${fw.desc}</p></button>`).join("")}
+          ${APP_FRAMEWORKS.map((fw) => `<button onclick="state.newRepoLang='${fw.id}'; state.ghNewProjModalOpen=true; render()" class="p-3 rounded-2xl border border-soft hover:border-violet-500 text-left transition wevlo-card-hover"><p class="font-extrabold">${fw.badge}</p><p class="text-[10px] text-muted mt-0.5">${fw.desc}</p></button>`).join("")}
         </div>
       </div>
 
       <div class="wevlo-card p-5 space-y-3 text-xs">
-        <span class="text-[10px] font-bold bg-purple-600 text-white px-2.5 py-0.5 rounded-full">Step 1 of 3</span>
+        <span class="text-[10px] font-bold bg-violet-600 text-white px-2.5 py-0.5 rounded-full">Step 1 of 3</span>
         <h3 class="font-extrabold text-base">Connect Your GitHub Account</h3>
-        ${state.githubToken ? `<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 flex justify-between items-center text-slate-900"><span class="font-bold">✓ ${state.githubUser?.login} (Connected)</span><button onclick="confirmLogout()" class="bg-white border px-3 py-1 rounded-full font-bold">Disconnect</button></div>` : `<button onclick="loginWithGithub()" class="btn-purple px-5 py-2.5 rounded-full font-bold">Connect GitHub Account</button>`}
+        ${state.githubToken
+          ? `<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 flex justify-between items-center text-slate-900"><span class="font-bold">✓ @${state.githubUser?.login || "Connected"}</span><button onclick="confirmLogout()" class="bg-white border px-3 py-1 rounded-full font-bold">Disconnect</button></div>`
+          : `<div class="flex flex-wrap gap-2"><button onclick="loginWithGithub()" class="btn-purple px-5 py-2.5 rounded-full font-bold">Connect GitHub Account</button><button onclick="openGhTokenModal()" class="border border-soft px-4 py-2.5 rounded-full font-bold">Connect via Token</button></div>`}
       </div>
 
-      <div class="wevlo-card p-5 space-y-3.5 text-xs relative">
-        <span class="text-[10px] font-bold bg-purple-600 text-white px-2.5 py-0.5 rounded-full">Step 2 of 3</span>
-        <h3 class="font-extrabold text-base">Select or Create a Project</h3>
-        <select id="ghRepoSelect" onchange="state.selectedGhRepo=this.value" class="w-full border border-soft rounded-xl px-3 py-2.5 font-semibold bg-transparent">
-          <option value="">-- Select a GitHub Repository --</option>
-          ${repos.map((r) => `<option value="${r.full_name}" ${state.selectedGhRepo === r.full_name ? "selected" : ""}>${r.full_name}</option>`).join("")}
-        </select>
-        <div class="flex flex-wrap gap-2 relative">
-          <button onclick="loadGithubRepos().then(()=>render())" class="border border-soft px-3.5 py-2 rounded-full font-bold">↻ Refresh</button>
-          <button onclick="state.ghNewProjModalOpen=true; render()" class="btn-purple px-4 py-2 rounded-full font-bold">+ New</button>
-          <button onclick="state.ghImportMenuOpen=!state.ghImportMenuOpen; render()" class="border border-soft px-3.5 py-2 rounded-full font-bold">↑ Import</button>
-          <button onclick="state.ghKeystoreModalOpen=true; render()" class="text-purple-700 font-bold px-2 py-2">🔒 Create signing keystore</button>
-          ${state.ghImportMenuOpen ? `<div class="absolute left-0 top-12 z-40 w-64 surface-card rounded-2xl shadow-2xl p-2 space-y-1"><label class="flex items-center gap-3 p-3 rounded-xl hover:bg-purple-500/10 cursor-pointer"><i data-lucide="file-plus" class="w-5 h-5 text-purple-600"></i><div><p class="font-bold">Files</p><p class="text-[11px] text-muted">Pick one or more files</p></div><input type="file" multiple class="hidden" onchange="handleImportFiles(event)" /></label><label class="flex items-center gap-3 p-3 rounded-xl hover:bg-purple-500/10 cursor-pointer"><i data-lucide="archive" class="w-5 h-5 text-purple-600"></i><div><p class="font-bold">ZIP file</p><p class="text-[11px] text-muted">Becomes a new project</p></div><input type="file" accept=".zip" class="hidden" onchange="handleImportZip(event)" /></label><label class="flex items-center gap-3 p-3 rounded-xl hover:bg-purple-500/10 cursor-pointer"><i data-lucide="folder-plus" class="w-5 h-5 text-purple-600"></i><div><p class="font-bold">Folder</p><p class="text-[11px] text-muted">Whole project, as a new repo</p></div><input type="file" webkitdirectory multiple class="hidden" onchange="handleImportFiles(event)" /></label></div>` : ""}
-        </div>
-        <input value="${state.repoFilter || ""}" oninput="state.repoFilter=this.value; render()" placeholder="Filter repositories..." class="w-full border border-soft rounded-xl px-3 py-2.5 bg-transparent" />
-        <input value="${state.ghBranch || "main"}" oninput="state.ghBranch=this.value" placeholder="Branch" class="w-full border border-soft rounded-xl px-3 py-2.5 bg-transparent" />
-        <button onclick="openGhVsCodeIde()" class="w-full btn-purple py-3.5 rounded-2xl text-sm font-bold">&lt;/&gt; Open in Editor →</button>
-      </div>
-
-      ${state.ghNewProjModalOpen ? `<div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
-        <div class="surface-card w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[28px] p-6 space-y-3.5 shadow-2xl animate-slide-up text-xs">
-          <div class="flex justify-between items-center"><h3 class="text-lg font-extrabold flex items-center gap-2"><i data-lucide="github" class="w-5 h-5 text-purple-600"></i> New App Project</h3><button onclick="state.ghNewProjModalOpen=false; render()" class="p-1.5 rounded-full hover:bg-purple-500/10"><i data-lucide="x" class="w-4 h-4"></i></button></div>
-          <div><label class="font-bold text-muted">Select App Language</label><div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1.5">${APP_FRAMEWORKS.map((fw) => `<button type="button" onclick="state.newRepoLang='${fw.id}'; render()" class="p-2 rounded-xl border text-left font-bold ${selectedLang === fw.id ? "border-purple-600 bg-purple-50 text-purple-800" : "border-soft"}">${fw.badge}</button>`).join("")}</div></div>
-          <div><label class="font-bold text-muted">Repository name</label><input id="ghModalRepoName" placeholder="my-${selectedLang}-app" class="w-full mt-1 border border-soft rounded-2xl px-4 py-2.5 text-sm bg-transparent" /></div>
-          <div class="p-3 rounded-2xl bg-purple-500/5 border border-soft space-y-1"><p class="font-bold text-purple-700">Auto-Configured Files for ${selectedLang.toUpperCase()} (${autoFilesList.length}):</p><p class="text-[11px] text-muted font-mono break-all">${autoFilesList.join(", ")}, wevlo-build.yml</p></div>
-          <div class="flex gap-2">
-            <button onclick="state.newRepoPriv='private'; render()" class="flex-1 p-2.5 rounded-2xl border font-bold ${state.newRepoPriv === "private" ? "border-purple-600 bg-purple-50 text-purple-800" : "border-soft"}">● Private <span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 rounded-full">Recommended</span></button>
-            <button onclick="state.newRepoPriv='public'; render()" class="px-4 p-2.5 rounded-2xl border font-bold ${state.newRepoPriv === "public" ? "border-purple-600 bg-purple-50 text-purple-800" : "border-soft"}">○ Public</button>
+      <div class="wevlo-card p-5 space-y-4 text-xs relative">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span class="text-[10px] font-bold bg-violet-600 text-white px-2.5 py-0.5 rounded-full">Step 2 of 3</span>
+            <h3 class="font-extrabold text-base mt-1.5">Your GitHub Repositories (${repos.length})</h3>
           </div>
-          <label class="flex items-start gap-2.5 p-3 rounded-2xl border border-soft cursor-pointer"><input type="checkbox" ${state.newRepoStarter ? "checked" : ""} onchange="state.newRepoStarter=this.checked" class="mt-0.5 accent-purple-600" /><div><b>Auto-setup starter &amp; build workflow</b><p class="text-[11px] text-muted">Automatically creates full folder structure &amp; CI pipeline.</p></div></label>
+          <div class="flex flex-wrap gap-2 relative">
+            <button onclick="loadGithubRepos().then(()=>render())" class="border border-soft px-3.5 py-2 rounded-full font-bold hover:bg-violet-500/5">↻ Refresh</button>
+            <button onclick="state.ghNewProjModalOpen=true; render()" class="btn-purple px-4 py-2 rounded-full font-bold">+ New</button>
+            <button onclick="state.ghImportMenuOpen=!state.ghImportMenuOpen; render()" class="border border-soft px-3.5 py-2 rounded-full font-bold hover:bg-violet-500/5">↑ Upload / Import</button>
+
+            ${state.ghImportMenuOpen ? `<div class="absolute right-0 top-11 z-40 w-72 surface-card rounded-2xl shadow-2xl p-2.5 space-y-1">
+              ${state.selectedGhRepo ? `<label class="flex items-center gap-3 p-3 rounded-xl bg-violet-500/10 hover:bg-violet-500/15 cursor-pointer"><i data-lucide="upload-cloud" class="w-5 h-5 text-violet-600 shrink-0"></i><div><p class="font-bold text-violet-700">Upload to ${state.selectedGhRepo.split("/")[1]}</p><p class="text-[11px] text-muted">Add files to selected repo</p></div><input type="file" multiple class="hidden" onchange="uploadFilesToCurrentRepo(event, '')" /></label>` : ""}
+              <label class="flex items-center gap-3 p-3 rounded-xl hover:bg-violet-500/10 cursor-pointer"><i data-lucide="file-plus" class="w-5 h-5 text-violet-600 shrink-0"></i><div><p class="font-bold">New Repo from Files</p><p class="text-[11px] text-muted">Pick one or more files</p></div><input type="file" multiple class="hidden" onchange="handleImportFiles(event)" /></label>
+              <label class="flex items-center gap-3 p-3 rounded-xl hover:bg-violet-500/10 cursor-pointer"><i data-lucide="archive" class="w-5 h-5 text-violet-600 shrink-0"></i><div><p class="font-bold">New Repo from ZIP</p><p class="text-[11px] text-muted">Extracts ZIP into a new repo</p></div><input type="file" accept=".zip" class="hidden" onchange="handleImportZip(event)" /></label>
+              <label class="flex items-center gap-3 p-3 rounded-xl hover:bg-violet-500/10 cursor-pointer"><i data-lucide="folder-plus" class="w-5 h-5 text-violet-600 shrink-0"></i><div><p class="font-bold">New Repo from Folder</p><p class="text-[11px] text-muted">Upload an entire project folder</p></div><input type="file" webkitdirectory multiple class="hidden" onchange="handleImportFiles(event)" /></label>
+            </div>` : ""}
+          </div>
+        </div>
+
+        <input value="${state.repoFilter || ""}" oninput="state.repoFilter=this.value; render()" placeholder="Search repositories..." class="w-full border border-soft rounded-xl px-3.5 py-2.5 bg-transparent focus:outline-none focus:border-violet-500" />
+
+        ${!state.githubToken
+          ? `<p class="text-center text-muted py-6">Connect your GitHub account above to load and click your repositories.</p>`
+          : repos.length === 0
+          ? `<div class="text-center py-8 space-y-2"><p class="text-muted">No matching repositories found.</p><button onclick="state.ghNewProjModalOpen=true; render()" class="btn-purple px-4 py-2 rounded-full font-bold">+ Create First Repository</button></div>`
+          : `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
+              ${repos.map((r) => {
+                const isSelected = state.selectedGhRepo === r.full_name;
+                return `
+                  <button type="button" onclick="openGhVsCodeIde('${r.full_name}', '${r.default_branch || "main"}')" class="text-left p-3.5 rounded-2xl border transition flex items-center justify-between gap-2 wevlo-card-hover ${isSelected ? "border-violet-600 bg-violet-500/10" : "border-soft"}">
+                    <div class="min-w-0">
+                      <p class="font-extrabold text-sm truncate">${r.name}</p>
+                      <p class="text-[11px] text-muted truncate">${r.private ? "🔒 Private" : "🌐 Public"} • ${r.default_branch || "main"} ${r.language ? "• " + r.language : ""}</p>
+                    </div>
+                    <span class="px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 ${isSelected ? "btn-purple" : "bg-violet-500/10 text-violet-600"}">Open →</span>
+                  </button>`;
+              }).join("")}
+            </div>`}
+
+        <div class="pt-2 border-t border-soft flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+            <span class="text-muted font-bold">Branch:</span>
+            <input value="${state.ghBranch || "main"}" oninput="state.ghBranch=this.value" placeholder="Branch" class="flex-1 border border-soft rounded-xl px-3 py-1.5 bg-transparent" />
+          </div>
+          <button onclick="state.ghKeystoreModalOpen=true; render()" class="text-violet-600 font-bold px-2 py-1">🔒 Create signing keystore</button>
+        </div>
+      </div>
+
+      ${state.ghNewProjModalOpen ? `<div class="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
+        <div class="surface-card w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[28px] p-6 space-y-3.5 shadow-2xl animate-slide-up text-xs">
+          <div class="flex justify-between items-center"><h3 class="text-lg font-extrabold flex items-center gap-2"><i data-lucide="github" class="w-5 h-5 text-violet-600"></i> New Hello World Project</h3><button onclick="state.ghNewProjModalOpen=false; render()" class="p-1.5 rounded-full hover:bg-violet-500/10"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+          <div><label class="font-bold text-muted">Select Language</label><div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1.5">${APP_FRAMEWORKS.map((fw) => `<button type="button" onclick="state.newRepoLang='${fw.id}'; render()" class="p-2 rounded-xl border text-left font-bold ${selectedLang === fw.id ? "border-violet-600 bg-violet-50 text-violet-800" : "border-soft"}">${fw.badge}</button>`).join("")}</div></div>
+          <div><label class="font-bold text-muted">Repository name</label><input id="ghModalRepoName" placeholder="my-${selectedLang}-app" class="w-full mt-1 border border-soft rounded-2xl px-4 py-2.5 text-sm bg-transparent" /></div>
+          <div class="p-3 rounded-2xl bg-violet-500/5 border border-soft space-y-1"><p class="font-bold text-violet-700">Default Hello World Files (${autoFilesList.length}):</p><p class="text-[11px] text-muted font-mono break-all">${autoFilesList.join(", ")}, wevlo-build.yml</p></div>
+          <div class="flex gap-2">
+            <button onclick="state.newRepoPriv='private'; render()" class="flex-1 p-2.5 rounded-2xl border font-bold ${state.newRepoPriv === "private" ? "border-violet-600 bg-violet-50 text-violet-800" : "border-soft"}">● Private</button>
+            <button onclick="state.newRepoPriv='public'; render()" class="flex-1 p-2.5 rounded-2xl border font-bold ${state.newRepoPriv === "public" ? "border-violet-600 bg-violet-50 text-violet-800" : "border-soft"}">○ Public</button>
+          </div>
+          <label class="flex items-start gap-2.5 p-3 rounded-2xl border border-soft cursor-pointer"><input type="checkbox" ${state.newRepoStarter ? "checked" : ""} onchange="state.newRepoStarter=this.checked" class="mt-0.5 accent-violet-600" /><div><b>Auto-setup Hello World &amp; build workflow</b><p class="text-[11px] text-muted">Creates the minimal working app structure + APK workflow.</p></div></label>
           <div class="flex justify-end gap-2"><button onclick="state.ghNewProjModalOpen=false; render()" class="px-5 py-2.5 rounded-full border border-soft font-bold">Cancel</button><button onclick="confirmCreateGhNewProject()" class="btn-purple px-5 py-2.5 rounded-full font-bold">+ Create &amp; open</button></div>
         </div>
       </div>` : ""}
 
-      ${state.ghKeystoreModalOpen ? `<div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="surface-card w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[28px] p-6 space-y-3 shadow-2xl animate-slide-up text-xs"><div class="flex justify-between items-center"><h3 class="text-lg font-extrabold flex items-center gap-2"><i data-lucide="lock" class="w-5 h-5 text-purple-600"></i> Create signing keystore</h3><button onclick="state.ghKeystoreModalOpen=false; render()" class="p-1.5 rounded-full hover:bg-purple-500/10"><i data-lucide="x" class="w-4 h-4"></i></button></div><p class="text-muted">A keystore signs your release APK / AAB. Created safely in your browser.</p><div><label class="font-bold">Name or app</label><input id="ksName" placeholder="My Android App" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div><label class="font-bold">Organization</label><input id="ksOrg" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div class="grid grid-cols-2 gap-2.5"><div><label class="font-bold">Country</label><input id="ksCountry" value="US" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div><label class="font-bold">Valid (years)</label><input id="ksYears" value="25" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div></div><div><label class="font-bold">Key alias</label><input id="ksAlias" value="key0" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div><label class="font-bold">Password</label><div class="flex gap-1.5 mt-1"><input id="ksPassInput" type="password" placeholder="Min 6 chars" class="flex-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /><button type="button" onclick="const i=document.getElementById('ksPassInput'); i.type=i.type==='password'?'text':'password'" class="px-3 border border-soft rounded-xl">👁</button><button type="button" onclick="generateRandomKeyPass()" class="px-3 border border-soft rounded-xl">↻</button></div></div><div class="flex justify-end gap-2 pt-2"><button onclick="state.ghKeystoreModalOpen=false; render()" class="px-5 py-2.5 rounded-full border border-soft font-bold">Cancel</button><button onclick="confirmCreateKeystore()" class="btn-purple px-5 py-2.5 rounded-full font-bold">🛡 Create keystore</button></div></div></div>` : ""}
+      ${state.ghKeystoreModalOpen ? `<div class="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"><div class="surface-card w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[28px] p-6 space-y-3 shadow-2xl animate-slide-up text-xs"><div class="flex justify-between items-center"><h3 class="text-lg font-extrabold flex items-center gap-2"><i data-lucide="lock" class="w-5 h-5 text-violet-600"></i> Create signing keystore</h3><button onclick="state.ghKeystoreModalOpen=false; render()" class="p-1.5 rounded-full hover:bg-violet-500/10"><i data-lucide="x" class="w-4 h-4"></i></button></div><p class="text-muted">A keystore signs your release APK / AAB. Created safely in your browser.</p><div><label class="font-bold">Name or app</label><input id="ksName" placeholder="My Android App" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div><label class="font-bold">Organization</label><input id="ksOrg" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div class="grid grid-cols-2 gap-2.5"><div><label class="font-bold">Country</label><input id="ksCountry" value="US" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div><label class="font-bold">Valid (years)</label><input id="ksYears" value="25" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div></div><div><label class="font-bold">Key alias</label><input id="ksAlias" value="key0" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /></div><div><label class="font-bold">Password</label><div class="flex gap-1.5 mt-1"><input id="ksPassInput" type="password" placeholder="Min 6 chars" class="flex-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent" /><button type="button" onclick="const i=document.getElementById('ksPassInput'); i.type=i.type==='password'?'text':'password'" class="px-3 border border-soft rounded-xl">👁</button><button type="button" onclick="generateRandomKeyPass()" class="px-3 border border-soft rounded-xl">↻</button></div></div><div class="flex justify-end gap-2 pt-2"><button onclick="state.ghKeystoreModalOpen=false; render()" class="px-5 py-2.5 rounded-full border border-soft font-bold">Cancel</button><button onclick="confirmCreateKeystore()" class="btn-purple px-5 py-2.5 rounded-full font-bold">🛡 Create keystore</button></div></div></div>` : ""}
     </div>`;
 }
