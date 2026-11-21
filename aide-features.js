@@ -116,7 +116,7 @@ const HINTS_BY_TYPE = {
     "  build:",
     "    runs-on: ubuntu-latest",
     "    steps:",
-    "      - uses: actions/checkout@v4"
+    "      - uses: actions/checkout@v6"
   ]
 };
 
@@ -183,7 +183,7 @@ export async function mountCodeMirror({ hostId, value, filePath, errorLines = []
     if (ln > 0 && ln <= cm.lineCount()) cm.addLineClass(ln - 1, "background", "bg-rose-500/20");
   });
 
-  setTimeout(() => cm.refresh(), 50);
+  setTimeout(() => cm.refresh(), 60);
   window.__wevloCM = cm;
   return cm;
 }
