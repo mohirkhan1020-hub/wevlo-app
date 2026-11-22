@@ -1,3 +1,7 @@
+// ======================================================
+// File 4/4: app.js (PART 1 of 2)
+// ======================================================
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth,
@@ -63,8 +67,10 @@ const state = {
   previewDevice: "phone",
   modalType: "html",
   buildConfig: {
+    appName: "",
     pkgName: "com.wevlo.app",
     versionName: "1.0.0",
+    versionCode: 1,
     fullscreen: false,
     jsEnabled: true,
     domStorage: true,
@@ -74,8 +80,11 @@ const state = {
   web2app: {
     url: "https://example.com",
     appName: "My Web App",
-    pkgName: "com.wevlo.webapp",
-    fullscreen: false
+    pkgName: "com.wevlo.mywebapp",
+    versionName: "1.0.0",
+    versionCode: 1,
+    fullscreen: false,
+    pkgEdited: false
   }
 };
 
@@ -101,6 +110,7 @@ window.toggleTheme = () => {
 function saveProjects() {
   localStorage.setItem("wevlo_projects", JSON.stringify(state.projects));
   if (state.activeProjectId) localStorage.setItem("wevlo_active_project", state.activeProjectId);
+  else localStorage.removeItem("wevlo_active_project");
 }
 
 function addActivity(text) {
@@ -111,6 +121,36 @@ function addActivity(text) {
 
 function getActiveProject() {
   return state.projects.find((p) => p.id === state.activeProjectId) || state.projects[0] || null;
+}
+
+function slugifyPkgPart(raw, fallback = "myapp") {
+  const s = (raw || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (s ? s.replace(/^[0-9]+/, "") : "") || fallback;
+}
+
+function sanitizePkgId(raw, fallback = "com.wevlo.myapp") {
+  const clean = (raw || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "")
+    .replace(/\.+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+  const parts = clean
+    .split(".")
+    .map((p) => p.replace(/^[^a-z]+/, ""))
+    .filter(Boolean);
+  return parts.length >= 2 ? parts.join(".") : fallback;
+}
+
+function escapeXml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeHtmlAttr(str) {
+  return escapeXml(str).replace(/'/g, "&#39;");
 }
 
 let confirmCallback = null;
@@ -281,6 +321,7 @@ function updateAccountUI() {
   const accName = document.getElementById("accName");
   const accEmail = document.getElementById("accEmail");
   const btnLogout = document.getElementById("btnLogoutMenu");
+  if (!av || !accName || !accEmail || !btnLogout) return;
   if (state.user) {
     const label = state.user.displayName || state.profile.name || state.user.email || "User";
     av.textContent = label[0].toUpperCase();
@@ -298,7 +339,8 @@ function updateAccountUI() {
     accEmail.textContent = "Connect GitHub or Google";
     btnLogout.classList.add("hidden");
   }
-  document.getElementById("ghMenuLabel").textContent = state.githubToken ? `GitHub: @${state.githubUser?.login || "Connected"}` : "Connect GitHub Account";
+  const ghLbl = document.getElementById("ghMenuLabel");
+  if (ghLbl) ghLbl.textContent = state.githubToken ? `GitHub: @${state.githubUser?.login || "Connected"}` : "Connect GitHub Account";
 }
 updateAccountUI();
 
@@ -371,6 +413,8 @@ window.confirmLogout = () =>
       state.ghIdeOpen = false;
       state.selectedGhRepo = "";
       state._loadedIdeRepo = "";
+      state.ghDrafts = {};
+      state.ghDirtyMap = {};
       sessionStorage.clear();
       localStorage.removeItem("wevlo_gh_session");
       document.getElementById("accountMenu").classList.add("hidden");
@@ -427,7 +471,7 @@ window.toggleAccountMenu = () => document.getElementById("accountMenu").classLis
 function renderHeaderAndNav() {
   const resumeBtn =
     state.githubToken && state.selectedGhRepo
-      ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-violet-600/15 text-violet-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${state.selectedGhRepo.split("/")[1]}</span><span>→</span></button>`
+      ? `<button onclick="resumeGithubIde(); toggleDrawer(false)" class="w-full flex items-center justify-between px-3 py-2 rounded-xl mb-2 bg-violet-600/15 text-violet-700 font-bold text-xs"><span class="truncate">⚡ Resume: ${escapeHtmlAttr(state.selectedGhRepo.split("/")[1])}</span><span>→</span></button>`
       : "";
 
   document.getElementById("sidebarNav").innerHTML =
@@ -469,11 +513,16 @@ window.selectModalType = (t) => {
 
 window.confirmCreateProject = () => {
   const name = document.getElementById("modalProjName").value.trim() || `Project ${state.projects.length + 1}`;
+  const slug = slugifyPkgPart(name, "app" + (state.projects.length + 1));
+  const prefix = sanitizePkgId(state.profile?.pkgPrefix || "com.wevlo", "com.wevlo");
   state.projects.unshift({
     id: "proj_" + Date.now(),
     name,
     type: state.modalType,
     url: "https://example.com",
+    pkgName: `${prefix}.${slug}`,
+    versionName: "1.0.0",
+    versionCode: 1,
     html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title></head><body><div class="card"><h1>${name}</h1><p>Built with Wevlo</p><button onclick="go()">Get Started</button></div></body></html>`,
     css: `body{font-family:sans-serif;background:#f6f6fb;display:grid;place-items:center;min-height:100vh;margin:0}.card{background:#fff;padding:28px;border-radius:20px;text-align:center}button{background:#6d28d9;color:#fff;border:none;padding:10px 22px;border-radius:99px;font-weight:bold}`,
     js: `function go(){alert("Hello from ${name}!")}`,
@@ -487,7 +536,7 @@ window.confirmCreateProject = () => {
 };
 
 // ======================================================
-// 6. GitHub REST API & Web2App / HTML APK Pipeline
+// 6. GitHub REST API (No-Cache) & Web2App / HTML APK Pipeline
 // ======================================================
 function toBase64(str) {
   let bin = "";
@@ -497,6 +546,7 @@ function toBase64(str) {
 
 async function ghFetch(path, options = {}) {
   const res = await fetch("https://api.github.com" + path, {
+    cache: "no-store",
     ...options,
     headers: {
       Authorization: "Bearer " + state.githubToken,
@@ -513,7 +563,7 @@ async function ghFetch(path, options = {}) {
 window.loadGithubRepos = async () => {
   if (!state.githubToken) return;
   try {
-    state.githubRepos = await ghFetch("/user/repos?sort=updated&per_page=50");
+    state.githubRepos = await ghFetch("/user/repos?sort=updated&per_page=100");
   } catch {}
 };
 
@@ -531,46 +581,89 @@ window.downloadPipelineApk = async (apiUrl, fileName, browserUrl) => {
   }
 };
 
-async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, logElId }) {
+async function ghPutPipelineFile(repoFull, path, content, branch) {
+  let sha;
+  try {
+    sha = (await ghFetch(`/repos/${repoFull}/contents/${path}?ref=${encodeURIComponent(branch)}`)).sha;
+  } catch {}
+  return ghFetch(`/repos/${repoFull}/contents/${path}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      message: `Update ${path}`,
+      content: toBase64(content),
+      branch,
+      ...(sha ? { sha } : {})
+    })
+  });
+}
+
+async function runGithubApkPipeline({ repoName, appName, pkgName, versionName = "1.0.0", versionCode = 1, fullscreen = false, javaSource, logElId }) {
   const logEl = document.getElementById(logElId);
   logEl.classList.remove("hidden");
   logEl.innerHTML = `<div class="flex items-center gap-2 font-bold mb-2"><span class="spinner"></span><span>Building APK on GitHub Actions...</span></div><div id="${logElId}_l" class="space-y-1"></div>`;
   const logs = document.getElementById(`${logElId}_l`);
   if (!state.githubToken) return (logs.innerHTML = `<span class="text-rose-600 font-bold">Please connect GitHub first!</span>`);
 
-  const safeRepo = (repoName || "wevlo-app").trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "-") + "-" + Math.floor(Math.random() * 900 + 100);
+  const cleanPkg = sanitizePkgId(pkgName, "");
+  if (!cleanPkg) {
+    return (logs.innerHTML = `<span class="text-rose-600 font-bold">Invalid Package Name! Example: com.mycompany.myapp</span>`);
+  }
+  const safeVerName = (versionName || "1.0.0").trim().replace(/[^a-zA-Z0-9._-]/g, "") || "1.0.0";
+  const safeVerCode = Math.max(1, parseInt(versionCode, 10) || 1);
+  const safeRepo = (repoName || "wevlo-app").trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^-+|-+$/g, "") || "wevlo-app";
+  const themeAttr = fullscreen
+    ? "@android:style/Theme.DeviceDefault.Light.NoActionBar.Fullscreen"
+    : "@android:style/Theme.DeviceDefault.Light.NoActionBar";
+
   try {
     const owner = state.githubUser?.login || (await ghFetch("/user")).login;
-    const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: safeRepo, private: true, auto_init: true }) });
-    const branch = r.default_branch || "main";
-    const pkgPath = pkgName.replace(/\./g, "/");
+    const repoFull = `${owner}/${safeRepo}`;
+    let branch = "main";
+    let repoExists = false;
+
+    try {
+      const existing = await ghFetch(`/repos/${repoFull}`);
+      branch = existing.default_branch || "main";
+      repoExists = true;
+      logs.innerHTML += `<div>• Updating existing repository <b>${repoFull}</b>...</div>`;
+    } catch {
+      const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: safeRepo, private: true, auto_init: true }) });
+      branch = r.default_branch || "main";
+      await new Promise((res) => setTimeout(res, 800));
+      logs.innerHTML += `<div>• Created repository <b>${repoFull}</b>...</div>`;
+    }
+
+    const pkgPath = cleanPkg.replace(/\./g, "/");
     const files = [
       { path: "settings.gradle", content: `pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}\ndependencyResolutionManagement{repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS);repositories{google();mavenCentral()}}\nrootProject.name="WevloApp"\ninclude ':app'\n` },
       { path: "build.gradle", content: `plugins{id 'com.android.application' version '8.5.2' apply false}\n` },
       { path: "gradle.properties", content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.nonTransitiveRClass=true\n` },
-      { path: "app/build.gradle", content: `plugins{id 'com.android.application'}\nandroid{namespace '${pkgName}';compileSdk 34;defaultConfig{applicationId "${pkgName}";minSdk 24;targetSdk 34;versionCode 1;versionName "1.0"};compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}}\n` },
-      { path: "app/src/main/AndroidManifest.xml", content: `<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><application android:label="${appName}" android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>` },
-      { path: `app/src/main/java/${pkgPath}/MainActivity.java`, content: `package ${pkgName};\n${javaSource}` },
+      { path: "app/build.gradle", content: `plugins{id 'com.android.application'}\nandroid{namespace '${cleanPkg}';compileSdk 34;defaultConfig{applicationId "${cleanPkg}";minSdk 24;targetSdk 34;versionCode ${safeVerCode};versionName "${safeVerName}"};compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}}\n` },
+      { path: "app/src/main/AndroidManifest.xml", content: `<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><application android:label="${escapeXml(appName)}" android:usesCleartextTraffic="true" android:theme="${themeAttr}"><activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>` },
+      { path: `app/src/main/java/${pkgPath}/MainActivity.java`, content: `package ${cleanPkg};\n${javaSource}` },
       {
         path: ".github/workflows/wevlo-build.yml",
-        content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v6\n      - uses: actions/setup-java@v5\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v6\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - name: Publish Release\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          shopt -s nullglob globstar\n          FILES=(app/build/outputs/apk/**/*.apk)\n          if [ \${#FILES[@]} -gt 0 ]; then\n            gh release create "v1-\${{ github.run_number }}" "\${FILES[@]}" --title "v1-\${{ github.run_number }}" --notes "Built with Wevlo"\n          fi\n`
+        content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v6\n      - uses: actions/setup-java@v5\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v6\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - name: Publish Release\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          shopt -s nullglob globstar\n          FILES=(app/build/outputs/apk/**/*.apk)\n          if [ \${#FILES[@]} -gt 0 ]; then\n            gh release create "v${safeVerName}-\${{ github.run_number }}" "\${FILES[@]}" --title "v${safeVerName}-\${{ github.run_number }}" --notes "Built with Wevlo"\n          fi\n`
       }
     ];
+
+    const createdAtMs = Date.now() - 15000;
     for (const f of files) {
-      await ghFetch(`/repos/${owner}/${safeRepo}/contents/${f.path}`, {
-        method: "PUT",
-        body: JSON.stringify({ message: `Add ${f.path}`, content: toBase64(f.content), branch })
-      });
+      await ghPutPipelineFile(repoFull, f.path, f.content, branch);
     }
-    logs.innerHTML += `<div>• Repository <b>${owner}/${safeRepo}</b> created. Building APK...</div>`;
+    if (!repoExists) await window.loadGithubRepos();
+    logs.innerHTML += `<div>• Pushed ${cleanPkg} (v${safeVerName}, code ${safeVerCode}). Building APK...</div>`;
+
     clearInterval(window.__wevloPipelineTimer);
     window.__wevloPipelineTimer = setInterval(async () => {
       try {
-        const latest = (await ghFetch(`/repos/${owner}/${safeRepo}/actions/runs?per_page=1`)).workflow_runs?.[0];
-        if (latest?.status === "completed") {
+        const latest = (await ghFetch(`/repos/${repoFull}/actions/runs?per_page=1`)).workflow_runs?.[0];
+        if (!latest) return;
+        if (new Date(latest.created_at).getTime() < createdAtMs) return;
+        if (latest.status === "completed") {
           clearInterval(window.__wevloPipelineTimer);
           if (latest.conclusion === "success") {
-            const apk = (await ghFetch(`/repos/${owner}/${safeRepo}/releases/latest`)).assets?.find((a) => a.name.endsWith(".apk"));
+            const apk = (await ghFetch(`/repos/${repoFull}/releases/latest`)).assets?.find((a) => a.name.endsWith(".apk"));
             if (apk) {
               logs.innerHTML += `<div class="mt-2"><button onclick="downloadPipelineApk('${apk.url}','${apk.name}','${apk.browser_download_url}')" class="btn-purple px-4 py-2 rounded-full text-xs font-bold inline-block">⬇ Download APK (${(apk.size / 1048576).toFixed(2)} MB)</button></div>`;
             }
@@ -581,9 +674,12 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, javaSource, lo
       } catch {}
     }, 7000);
   } catch (e) {
-    logs.innerHTML += `<div class="text-rose-600 font-bold">${e.message}</div>`;
+    logs.innerHTML += `<div class="text-rose-600 font-bold">${escapeXml(e.message)}</div>`;
   }
 }
+// ======================================================
+// File 4/4: app.js (PART 2 of 2 — paste directly below PART 1)
+// ======================================================
 
 // ======================================================
 // 7. Personal Studio Pages
@@ -599,7 +695,7 @@ function renderDashboard() {
     ["python", "🐍 Python", "Hello World Kivy"]
   ];
   return `
-    ${state.githubToken && state.selectedGhRepo ? `<div class="wevlo-card p-4 border-violet-400/50 bg-violet-500/5 flex flex-wrap items-center justify-between gap-2"><span class="text-xs font-bold">⚡ Active GitHub IDE: <b class="text-violet-700">${state.selectedGhRepo}</b> (${state.ghBranch || "main"})</span><button onclick="resumeGithubIde()" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Open IDE →</button></div>` : ""}
+    ${state.githubToken && state.selectedGhRepo ? `<div class="wevlo-card p-4 border-violet-400/50 bg-violet-500/5 flex flex-wrap items-center justify-between gap-2"><span class="text-xs font-bold">⚡ Active GitHub IDE: <b class="text-violet-700">${escapeHtmlAttr(state.selectedGhRepo)}</b> (${escapeHtmlAttr(state.ghBranch || "main")})</span><button onclick="resumeGithubIde()" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Open IDE →</button></div>` : ""}
 
     <div class="hero-lavender rounded-[26px] p-6 flex items-start justify-between gap-3">
       <div>
@@ -650,7 +746,7 @@ function renderProjects() {
   if (state.projects.length === 0) {
     return `<div class="wevlo-card p-8 border-2 border-dashed border-soft text-center space-y-4"><h2 class="text-xl font-extrabold">No web projects yet</h2><button onclick="openNewProjectModal()" class="btn-purple px-5 py-2.5 rounded-full text-xs font-bold">+ Create Project</button></div>`;
   }
-  return `<div class="flex flex-wrap justify-between gap-3"><h1 class="text-xl font-extrabold">My Projects (${filtered.length})</h1><div class="flex gap-2"><input value="${state.projSearch}" oninput="state.projSearch=this.value;render()" placeholder="Search..." class="border border-soft rounded-full px-4 py-1.5 text-xs bg-transparent"/><button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New</button></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">${filtered.map((p) => `<div class="wevlo-card wevlo-card-hover p-5 space-y-3"><div class="flex justify-between"><div><h3 class="font-bold text-base">${p.name}</h3><p class="text-xs text-muted uppercase">${p.type}</p></div><button onclick="confirmDeleteProject('${p.id}')" class="text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div><div class="flex gap-2"><button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit</button><button onclick="openProjectInPreview('${p.id}')" class="border border-soft px-3.5 py-1.5 rounded-full text-xs font-bold">Preview</button><button onclick="openProjectInBuild('${p.id}')" class="bg-violet-50 text-violet-700 px-3.5 py-1.5 rounded-full text-xs font-bold">Build APK</button></div></div>`).join("")}</div>`;
+  return `<div class="flex flex-wrap justify-between gap-3"><h1 class="text-xl font-extrabold">My Projects (${filtered.length})</h1><div class="flex gap-2"><input value="${escapeHtmlAttr(state.projSearch)}" oninput="state.projSearch=this.value;render()" placeholder="Search..." class="border border-soft rounded-full px-4 py-1.5 text-xs bg-transparent"/><button onclick="openNewProjectModal()" class="btn-purple px-4 py-2 rounded-full text-xs font-bold">+ New</button></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">${filtered.map((p) => `<div class="wevlo-card wevlo-card-hover p-5 space-y-3"><div class="flex justify-between"><div><h3 class="font-bold text-base">${escapeHtmlAttr(p.name)}</h3><p class="text-xs text-muted uppercase">${escapeHtmlAttr(p.type)} ${p.pkgName ? "• " + escapeHtmlAttr(p.pkgName) : ""}</p></div><button onclick="confirmDeleteProject('${p.id}')" class="text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div><div class="flex gap-2"><button onclick="openProjectInEditor('${p.id}')" class="btn-purple px-4 py-1.5 rounded-full text-xs font-bold">Edit</button><button onclick="openProjectInPreview('${p.id}')" class="border border-soft px-3.5 py-1.5 rounded-full text-xs font-bold">Preview</button><button onclick="openProjectInBuild('${p.id}')" class="bg-violet-50 text-violet-700 px-3.5 py-1.5 rounded-full text-xs font-bold">Build APK</button></div></div>`).join("")}</div>`;
 }
 
 function renderBuildApk() {
@@ -658,14 +754,43 @@ function renderBuildApk() {
   if (!proj) {
     return `<div class="wevlo-card p-6 text-center space-y-3"><h3 class="font-bold">No projects to build</h3><button onclick="navigate('#/projects')" class="btn-purple px-6 py-2.5 rounded-full text-xs font-bold">Go to My Projects</button></div>`;
   }
+  const prefix = sanitizePkgId(state.profile?.pkgPrefix || "com.wevlo", "com.wevlo");
+  const defaultSlug = slugifyPkgPart(proj.name, "myapp");
+  if (!proj.pkgName) proj.pkgName = `${prefix}.${defaultSlug}`;
+  if (!proj.appName) proj.appName = proj.name;
+  if (!proj.versionName) proj.versionName = "1.0.0";
+  if (!proj.versionCode) proj.versionCode = 1;
+  if (!proj.repoName) proj.repoName = `wevlo-${proj.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+
   const b = state.buildConfig;
   const toggleRow = (l, k) => `<div class="flex justify-between items-center py-1.5"><span>${l}</span><label class="toggle-switch"><input type="checkbox" ${b[k] ? "checked" : ""} onchange="state.buildConfig['${k}']=this.checked"><span class="toggle-slider"></span></label></div>`;
   return `
     <div class="wevlo-card p-5 space-y-4 text-xs">
-      <b class="text-base">Build APK (${proj.name})</b>
+      <div>
+        <b class="text-base">Build APK (${escapeHtmlAttr(proj.name)})</b>
+        <p class="text-[11px] text-muted mt-0.5">প্রতিটি অ্যাপের Package ID আলাদা রাখলে ফোনের আগের অ্যাপ আপডেট হবে না।</p>
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><label class="font-bold text-muted">Package ID</label><input value="${b.pkgName}" oninput="state.buildConfig.pkgName=this.value" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/></div>
-        <div><label class="font-bold text-muted">GitHub Repo Prefix</label><input id="bRepoName" value="wevlo-${proj.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/></div>
+        <div>
+          <label class="font-bold text-muted">App Name</label>
+          <input value="${escapeHtmlAttr(proj.appName)}" oninput="updateActiveProjBuildField('${proj.id}','appName',this.value)" placeholder="My App" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/>
+        </div>
+        <div>
+          <label class="font-bold text-muted">Package Name (Unique ID)</label>
+          <input value="${escapeHtmlAttr(proj.pkgName)}" oninput="updateActiveProjBuildField('${proj.id}','pkgName',this.value)" placeholder="${prefix}.${defaultSlug}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
+        </div>
+        <div>
+          <label class="font-bold text-muted">Version Name</label>
+          <input value="${escapeHtmlAttr(proj.versionName)}" oninput="updateActiveProjBuildField('${proj.id}','versionName',this.value)" placeholder="1.0.0" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
+        </div>
+        <div>
+          <label class="font-bold text-muted">Version Code</label>
+          <input type="number" min="1" value="${escapeHtmlAttr(proj.versionCode)}" oninput="updateActiveProjBuildField('${proj.id}','versionCode',this.value)" placeholder="1" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="font-bold text-muted">GitHub Repository Name</label>
+          <input id="bRepoName" value="${escapeHtmlAttr(proj.repoName)}" oninput="updateActiveProjBuildField('${proj.id}','repoName',this.value)" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
+        </div>
       </div>
       <div class="space-y-1 border border-soft rounded-2xl p-3.5">
         ${toggleRow("Enable JavaScript", "jsEnabled")}
@@ -686,19 +811,27 @@ function renderWeb2App() {
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
       <div class="lg:col-span-7 wevlo-card p-5 space-y-3 text-xs">
-        <div><label class="font-bold text-muted">Website URL</label><input value="${w.url}" oninput="updateW2A('url',this.value)" placeholder="https://" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
-        <div><label class="font-bold text-muted">App Name</label><input value="${w.appName}" oninput="updateW2A('appName',this.value)" placeholder="App Name" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
-        <div><label class="font-bold text-muted">Package ID</label><input value="${w.pkgName}" oninput="updateW2A('pkgName',this.value)" placeholder="com.myapp.web" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
+        <div><label class="font-bold text-muted">Website URL</label><input value="${escapeHtmlAttr(w.url)}" oninput="updateW2A('url',this.value)" placeholder="https://" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div><label class="font-bold text-muted">App Name</label><input value="${escapeHtmlAttr(w.appName)}" oninput="updateW2A('appName',this.value)" placeholder="App Name" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/></div>
+          <div><label class="font-bold text-muted">Package ID (Unique)</label><input id="w2aPkgInput" value="${escapeHtmlAttr(w.pkgName)}" oninput="state.web2app.pkgEdited=true; updateW2A('pkgName',this.value)" placeholder="com.myapp.web" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent font-mono"/></div>
+          <div><label class="font-bold text-muted">Version Name</label><input value="${escapeHtmlAttr(w.versionName || "1.0.0")}" oninput="updateW2A('versionName',this.value)" placeholder="1.0.0" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent font-mono"/></div>
+          <div><label class="font-bold text-muted">Version Code</label><input type="number" min="1" value="${escapeHtmlAttr(w.versionCode || 1)}" oninput="updateW2A('versionCode',this.value)" placeholder="1" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent font-mono"/></div>
+        </div>
+        <div class="flex justify-between items-center py-1.5 px-1">
+          <span class="font-bold text-muted">Fullscreen Mode</span>
+          <label class="toggle-switch"><input type="checkbox" ${w.fullscreen ? "checked" : ""} onchange="updateW2A('fullscreen',this.checked)"><span class="toggle-slider"></span></label>
+        </div>
         <button onclick="startWeb2AppBuild()" class="w-full btn-purple py-3.5 rounded-full text-sm font-bold">🚀 Convert to Android App →</button>
         <div id="w2aLog" class="hidden border border-soft rounded-2xl p-4"></div>
       </div>
       <div class="lg:col-span-5 wevlo-card p-5 flex justify-center">
         <div class="phone-mockup flex flex-col">
           <div class="phone-notch"></div>
-          <div class="btn-purple pt-6 pb-2.5 px-3 text-white text-xs font-bold" id="mockAppName">${w.appName}</div>
+          <div class="btn-purple pt-6 pb-2.5 px-3 text-white text-xs font-bold" id="mockAppName">${escapeHtmlAttr(w.appName)}</div>
           <div class="flex-1 flex flex-col items-center justify-center p-4 text-center">
-            <p class="font-extrabold text-sm">Welcome to ${w.appName}</p>
-            <p class="text-[11px] text-slate-400 break-all mt-1">${w.url}</p>
+            <p class="font-extrabold text-sm" id="mockWelcome">Welcome to ${escapeHtmlAttr(w.appName)}</p>
+            <p class="text-[11px] text-slate-400 break-all mt-1" id="mockUrl">${escapeHtmlAttr(w.url)}</p>
           </div>
         </div>
       </div>
@@ -727,7 +860,7 @@ function renderPreview() {
   if (!proj) return `<div class="wevlo-card p-8 text-center text-xs text-muted">Please create a project first.</div>`;
   const doc = `<!DOCTYPE html><html><head><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
   const w = { phone: "max-w-[360px]", tablet: "max-w-[700px]", desktop: "max-w-full" }[state.previewDevice];
-  return `<div class="wevlo-card p-4 flex justify-between items-center"><b class="text-sm">${proj.name}</b><div class="flex gap-1.5">${["phone", "tablet", "desktop"].map((d) => `<button onclick="state.previewDevice='${d}';render()" class="px-3 py-1 rounded-full text-xs font-bold capitalize ${state.previewDevice === d ? "btn-purple" : "border border-soft"}">${d}</button>`).join("")}</div></div><div class="flex justify-center"><iframe class="${w} w-full h-[520px] bg-white rounded-3xl border-4 border-slate-800 shadow-xl" srcdoc="${doc.replace(/"/g, "&quot;")}"></iframe></div>`;
+  return `<div class="wevlo-card p-4 flex justify-between items-center"><b class="text-sm">${escapeHtmlAttr(proj.name)}</b><div class="flex gap-1.5">${["phone", "tablet", "desktop"].map((d) => `<button onclick="state.previewDevice='${d}';render()" class="px-3 py-1 rounded-full text-xs font-bold capitalize ${state.previewDevice === d ? "btn-purple" : "border border-soft"}">${d}</button>`).join("")}</div></div><div class="flex justify-center"><iframe class="${w} w-full h-[520px] bg-white rounded-3xl border-4 border-slate-800 shadow-xl" srcdoc="${escapeHtmlAttr(doc)}"></iframe></div>`;
 }
 
 function renderSettings() {
@@ -735,9 +868,15 @@ function renderSettings() {
   return `
     <div class="wevlo-card p-5 space-y-4 text-xs">
       <h1 class="text-xl font-extrabold">Settings &amp; Connections</h1>
-      <div>
-        <label class="font-bold text-muted">Developer Name</label>
-        <input value="${pr.name || ""}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="font-bold text-muted">Developer Name</label>
+          <input value="${escapeHtmlAttr(pr.name || "")}" placeholder="Enter your name" oninput="state.profile.name=this.value" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent"/>
+        </div>
+        <div>
+          <label class="font-bold text-muted">Default Package Prefix</label>
+          <input value="${escapeHtmlAttr(pr.pkgPrefix || "com.wevlo")}" placeholder="com.mycompany" oninput="state.profile.pkgPrefix=this.value" class="w-full mt-1 border border-soft rounded-xl px-3.5 py-2.5 bg-transparent font-mono"/>
+        </div>
       </div>
       <div class="flex flex-wrap gap-2.5">
         <button onclick="saveUserProfile()" class="btn-purple px-5 py-2.5 rounded-full font-bold">Save Profile</button>
@@ -775,12 +914,21 @@ window.openProjectInBuild = (id) => {
   saveProjects();
   window.navigate("#/build");
 };
+window.updateActiveProjBuildField = (id, key, val) => {
+  const proj = state.projects.find((p) => p.id === id);
+  if (!proj) return;
+  proj[key] = val;
+  saveProjects();
+};
 window.confirmDeleteProject = (id) =>
   openConfirmModal({
     title: "Delete Project?",
     message: "Delete this project?",
     onConfirm: () => {
       state.projects = state.projects.filter((p) => p.id !== id);
+      if (state.activeProjectId === id) {
+        state.activeProjectId = state.projects[0]?.id || null;
+      }
       saveProjects();
       window.render();
     }
@@ -789,17 +937,33 @@ window.updateW2A = (k, v) => {
   state.web2app[k] = v;
   if (k === "appName") {
     const el = document.getElementById("mockAppName");
+    const wel = document.getElementById("mockWelcome");
     if (el) el.textContent = v;
+    if (wel) wel.textContent = "Welcome to " + v;
+    if (!state.web2app.pkgEdited) {
+      const prefix = sanitizePkgId(state.profile?.pkgPrefix || "com.wevlo", "com.wevlo");
+      const nextPkg = `${prefix}.${slugifyPkgPart(v, "webapp")}`;
+      state.web2app.pkgName = nextPkg;
+      const pkgEl = document.getElementById("w2aPkgInput");
+      if (pkgEl) pkgEl.value = nextPkg;
+    }
+  } else if (k === "url") {
+    const uEl = document.getElementById("mockUrl");
+    if (uEl) uEl.textContent = v;
   }
 };
 
 window.startWeb2AppBuild = () => {
   const w = state.web2app;
+  const safeUrl = (w.url || "https://example.com").replace(/"/g, '\\"');
   runGithubApkPipeline({
-    repoName: "wevlo-" + w.appName,
-    appName: w.appName,
+    repoName: "wevlo-" + slugifyPkgPart(w.appName, "webapp"),
+    appName: w.appName || "My Web App",
     pkgName: w.pkgName,
-    javaSource: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.*;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    WebView wv = new WebView(this);\n    wv.getSettings().setJavaScriptEnabled(true);\n    wv.getSettings().setDomStorageEnabled(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl("${w.url}");\n    setContentView(wv);\n  }\n}`,
+    versionName: w.versionName || "1.0.0",
+    versionCode: w.versionCode || 1,
+    fullscreen: !!w.fullscreen,
+    javaSource: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.*;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    WebView wv = new WebView(this);\n    wv.getSettings().setJavaScriptEnabled(true);\n    wv.getSettings().setDomStorageEnabled(true);\n    wv.setWebViewClient(new WebViewClient());\n    wv.loadUrl("${safeUrl}");\n    setContentView(wv);\n  }\n}`,
     logElId: "w2aLog"
   });
 };
@@ -807,23 +971,43 @@ window.startWeb2AppBuild = () => {
 window.buildProjectToApk = (id) => {
   const proj = state.projects.find((p) => p.id === id);
   if (!proj) return;
-  const fullHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
+  let htmlBody = proj.html || "";
+  let cssBody = proj.css || "";
+  let jsBody = proj.js || "";
+  if (Array.isArray(proj.files) && proj.files.length > 0) {
+    const htmlFile = proj.files.find((f) => f.name === "index.html") || proj.files.find((f) => f.name.endsWith(".html"));
+    if (htmlFile) htmlBody = htmlFile.content || "";
+    const cssFiles = proj.files.filter((f) => f.name.endsWith(".css"));
+    if (cssFiles.length) cssBody = cssFiles.map((f) => f.content || "").join("\n");
+    const jsFiles = proj.files.filter((f) => f.name.endsWith(".js"));
+    if (jsFiles.length) jsBody = jsFiles.map((f) => f.content || "").join("\n");
+  }
+  const fullHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${cssBody}</style></head><body>${htmlBody}<script>${jsBody}<\/script></body></html>`;
   const htmlB64 = toBase64(fullHtml);
   const b = state.buildConfig;
+  const repoInput = document.getElementById("bRepoName")?.value.trim() || proj.repoName || `wevlo-${proj.name}`;
   runGithubApkPipeline({
-    repoName: document.getElementById("bRepoName").value.trim(),
-    appName: proj.name,
-    pkgName: b.pkgName,
+    repoName: repoInput,
+    appName: proj.appName || proj.name,
+    pkgName: proj.pkgName || b.pkgName,
+    versionName: proj.versionName || "1.0.0",
+    versionCode: proj.versionCode || 1,
+    fullscreen: !!b.fullscreen,
     javaSource: `import android.app.Activity;\nimport android.os.Bundle;\nimport android.util.Base64;\nimport android.webkit.WebView;\nimport java.nio.charset.StandardCharsets;\npublic class MainActivity extends Activity {\n  @Override protected void onCreate(Bundle b) {\n    super.onCreate(b);\n    WebView w = new WebView(this);\n    w.getSettings().setJavaScriptEnabled(${!!b.jsEnabled});\n    w.getSettings().setDomStorageEnabled(${!!b.domStorage});\n    String html = new String(Base64.decode("${htmlB64}", Base64.DEFAULT), StandardCharsets.UTF_8);\n    w.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);\n    setContentView(w);\n  }\n}`,
     logElId: "buildProjLog"
   });
 };
 
 window.cloneTemplate = (name) => {
+  const slug = slugifyPkgPart(name, "template");
+  const prefix = sanitizePkgId(state.profile?.pkgPrefix || "com.wevlo", "com.wevlo");
   state.projects.unshift({
     id: "proj_" + Date.now(),
     name,
     type: "html",
+    pkgName: `${prefix}.${slug}`,
+    versionName: "1.0.0",
+    versionCode: 1,
     html: `<h1>${name}</h1>`,
     css: `body{font-family:sans-serif;text-align:center;padding:30px}`,
     js: ``,
@@ -835,6 +1019,7 @@ window.cloneTemplate = (name) => {
 };
 
 window.saveUserProfile = () => {
+  state.profile.pkgPrefix = sanitizePkgId(state.profile.pkgPrefix, "com.wevlo");
   localStorage.setItem("wevlo_profile", JSON.stringify(state.profile));
   updateAccountUI();
   window.showToast("Profile saved!", "success");
@@ -858,7 +1043,15 @@ window.render = function render() {
   if (c?.parentElement) c.parentElement.className = isFullIde ? "flex-1 flex flex-col min-w-0" : "flex-1 flex flex-col min-w-0 pb-24 lg:pb-8";
   if (c) c.className = isFullIde ? "w-full min-h-screen p-0" : "max-w-5xl w-full mx-auto px-4 py-5 space-y-5";
 
-  const extraHtml = renderExtraPages({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, addActivity, openConfirmModal });
+  const extraHtml = renderExtraPages({
+    state,
+    saveProjects,
+    navigate: window.navigate,
+    showToast: window.showToast,
+    render: window.render,
+    addActivity,
+    openConfirmModal
+  });
   if (extraHtml) {
     c.innerHTML = extraHtml;
   } else {
@@ -867,7 +1060,14 @@ window.render = function render() {
         c.innerHTML = renderProjects();
         break;
       case "#/editor":
-        c.innerHTML = renderProCodeEditor({ state, saveProjects, navigate: window.navigate, showToast: window.showToast, render: window.render, openNewProjectModal: window.openNewProjectModal });
+        c.innerHTML = renderProCodeEditor({
+          state,
+          saveProjects,
+          navigate: window.navigate,
+          showToast: window.showToast,
+          render: window.render,
+          openNewProjectModal: window.openNewProjectModal
+        });
         break;
       case "#/build":
         c.innerHTML = renderBuildApk();
@@ -876,7 +1076,16 @@ window.render = function render() {
         c.innerHTML = renderWeb2App();
         break;
       case "#/github-build":
-        c.innerHTML = renderProGithubBuild({ state, ghFetch, showToast: window.showToast, render: window.render, navigate: window.navigate, confirmLogout: window.confirmLogout, loginWithGithub: window.loginWithGithub, loadGithubRepos: window.loadGithubRepos });
+        c.innerHTML = renderProGithubBuild({
+          state,
+          ghFetch,
+          showToast: window.showToast,
+          render: window.render,
+          navigate: window.navigate,
+          confirmLogout: window.confirmLogout,
+          loginWithGithub: window.loginWithGithub,
+          loadGithubRepos: window.loadGithubRepos
+        });
         break;
       case "#/templates":
         c.innerHTML = renderTemplates();
