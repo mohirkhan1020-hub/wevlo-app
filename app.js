@@ -1,6 +1,4 @@
-// ======================================================
-// File 4/4: app.js (PART 1 of 2)
-// ======================================================
+// === START: app.js — PART 1 OF 4 ===
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -134,10 +132,7 @@ function sanitizePkgId(raw, fallback = "com.wevlo.myapp") {
     .replace(/[^a-z0-9._]/g, "")
     .replace(/\.+/g, ".")
     .replace(/^\.+|\.+$/g, "");
-  const parts = clean
-    .split(".")
-    .map((p) => p.replace(/^[^a-z]+/, ""))
-    .filter(Boolean);
+  const parts = clean.split(".").map((p) => p.replace(/^[^a-z]+/, "")).filter(Boolean);
   return parts.length >= 2 ? parts.join(".") : fallback;
 }
 
@@ -169,7 +164,7 @@ window.closeConfirmModal = () => {
   m.classList.remove("flex");
 };
 
-document.getElementById("confirmOkBtn").addEventListener("click", () => {
+document.getElementById("confirmOkBtn")?.addEventListener("click", () => {
   if (confirmCallback) confirmCallback();
   window.closeConfirmModal();
 });
@@ -177,6 +172,7 @@ document.getElementById("confirmOkBtn").addEventListener("click", () => {
 let toastTimer = null;
 window.showToast = (msg, type = "info") => {
   const t = document.getElementById("toast");
+  if (!t) return;
   t.textContent = msg;
   const bg = type === "error" ? "bg-rose-600" : type === "success" ? "bg-emerald-600" : "bg-slate-900";
   t.className = `fixed top-20 left-1/2 -translate-x-1/2 z-[60] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg max-w-[90vw] text-center ${bg}`;
@@ -192,6 +188,8 @@ window.resumeGithubIde = async () => {
     await window.openGhVsCodeIde(state.selectedGhRepo, state.ghBranch || "main");
   }
 };
+// === END: app.js — PART 1 OF 4 ===
+// === START: app.js — PART 2 OF 4 (paste directly below PART 1) ===
 
 // ======================================================
 // 4. Auth + Popup-Free Email & GitHub Token Connect
@@ -311,7 +309,7 @@ if (auth) {
   onAuthStateChanged(auth, (u) => {
     state.user = u;
     updateAccountUI();
-    window.render();
+    if (window.render) window.render();
   });
 }
 
@@ -534,6 +532,8 @@ window.confirmCreateProject = () => {
   window.closeNewProjectModal();
   window.navigate(state.modalType === "webview" ? "#/web2app" : "#/editor");
 };
+// === END: app.js — PART 2 OF 4 ===
+// === START: app.js — PART 3 OF 4 (paste directly below PART 2) ===
 
 // ======================================================
 // 6. GitHub REST API (No-Cache) & Web2App / HTML APK Pipeline
@@ -581,6 +581,38 @@ window.downloadPipelineApk = async (apiUrl, fileName, browserUrl) => {
   }
 };
 
+window.downloadPipelineArtifact = async (artifactApiUrl, artifactName, runUrl) => {
+  try {
+    window.showToast("Extracting APK from Artifact...", "info");
+    if (!window.JSZip) {
+      await new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
+        s.onload = res;
+        s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const res = await fetch(artifactApiUrl, { headers: { Authorization: "Bearer " + state.githubToken, Accept: "application/vnd.github+json" } });
+    if (!res.ok) throw new Error();
+    const blob = await res.blob();
+    const zip = await window.JSZip.loadAsync(blob);
+    const apkEntry = Object.values(zip.files).find((f) => !f.dir && f.name.endsWith(".apk"));
+    const a = document.createElement("a");
+    if (apkEntry) {
+      a.href = URL.createObjectURL(await apkEntry.async("blob"));
+      a.download = apkEntry.name.split("/").pop() || "app.apk";
+      a.click();
+    } else {
+      a.href = URL.createObjectURL(blob);
+      a.download = (artifactName || "app-output") + ".zip";
+      a.click();
+    }
+  } catch {
+    if (runUrl) window.open(runUrl, "_blank");
+  }
+};
+
 async function ghPutPipelineFile(repoFull, path, content, branch) {
   let sha;
   try {
@@ -597,6 +629,34 @@ async function ghPutPipelineFile(repoFull, path, content, branch) {
   });
 }
 
+async function resolvePipelineOutputs(repoFull, runId, runNumber) {
+  const out = { apk: null, artifact: null };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const rel = await ghFetch(`/repos/${repoFull}/releases/latest`);
+      const asset = rel.assets?.find((a) => a.name.endsWith(".apk"));
+      if (asset) { out.apk = asset; break; }
+    } catch {}
+    try {
+      const rels = await ghFetch(`/repos/${repoFull}/releases?per_page=8`);
+      const list = Array.isArray(rels) ? rels : [];
+      const foundRel =
+        list.find((r) => !r.prerelease && runNumber && (r.tag_name || "").endsWith(`-${runNumber}`) && r.assets?.some((a) => a.name.endsWith(".apk"))) ||
+        list.find((r) => !r.prerelease && r.assets?.some((a) => a.name.endsWith(".apk")));
+      const asset = foundRel?.assets?.find((a) => a.name.endsWith(".apk"));
+      if (asset) { out.apk = asset; break; }
+    } catch {}
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (runId) {
+    try {
+      const artRes = await ghFetch(`/repos/${repoFull}/actions/runs/${runId}/artifacts`);
+      out.artifact = (artRes.artifacts || []).find((a) => !a.expired) || null;
+    } catch {}
+  }
+  return out;
+}
+
 async function runGithubApkPipeline({ repoName, appName, pkgName, versionName = "1.0.0", versionCode = 1, fullscreen = false, javaSource, logElId }) {
   const logEl = document.getElementById(logElId);
   logEl.classList.remove("hidden");
@@ -611,26 +671,27 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, versionName = 
   const safeVerName = (versionName || "1.0.0").trim().replace(/[^a-zA-Z0-9._-]/g, "") || "1.0.0";
   const safeVerCode = Math.max(1, parseInt(versionCode, 10) || 1);
   const safeRepo = (repoName || "wevlo-app").trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^-+|-+$/g, "") || "wevlo-app";
-  const themeAttr = fullscreen
-    ? "@android:style/Theme.DeviceDefault.Light.NoActionBar.Fullscreen"
-    : "@android:style/Theme.DeviceDefault.Light.NoActionBar";
+  const themeAttr = fullscreen ? "@android:style/Theme.DeviceDefault.Light.NoActionBar.Fullscreen" : "@android:style/Theme.DeviceDefault.Light.NoActionBar";
 
   try {
     const owner = state.githubUser?.login || (await ghFetch("/user")).login;
     const repoFull = `${owner}/${safeRepo}`;
     let branch = "main";
     let repoExists = false;
+    let prevRunId = null;
 
     try {
       const existing = await ghFetch(`/repos/${repoFull}`);
       branch = existing.default_branch || "main";
       repoExists = true;
-      logs.innerHTML += `<div>• Updating existing repository <b>${repoFull}</b>...</div>`;
+      const prevLatest = (await ghFetch(`/repos/${repoFull}/actions/runs?per_page=1`)).workflow_runs?.[0];
+      if (prevLatest) prevRunId = prevLatest.id;
+      logs.innerHTML += `<div>• Updating existing repository <b>${escapeXml(repoFull)}</b>...</div>`;
     } catch {
       const r = await ghFetch("/user/repos", { method: "POST", body: JSON.stringify({ name: safeRepo, private: true, auto_init: true }) });
       branch = r.default_branch || "main";
       await new Promise((res) => setTimeout(res, 800));
-      logs.innerHTML += `<div>• Created repository <b>${repoFull}</b>...</div>`;
+      logs.innerHTML += `<div>• Created repository <b>${escapeXml(repoFull)}</b>...</div>`;
     }
 
     const pkgPath = cleanPkg.replace(/\./g, "/");
@@ -643,11 +704,10 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, versionName = 
       { path: `app/src/main/java/${pkgPath}/MainActivity.java`, content: `package ${cleanPkg};\n${javaSource}` },
       {
         path: ".github/workflows/wevlo-build.yml",
-        content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v6\n      - uses: actions/setup-java@v5\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v6\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - name: Publish Release\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          shopt -s nullglob globstar\n          FILES=(app/build/outputs/apk/**/*.apk)\n          if [ \${#FILES[@]} -gt 0 ]; then\n            gh release create "v${safeVerName}-\${{ github.run_number }}" "\${FILES[@]}" --title "v${safeVerName}-\${{ github.run_number }}" --notes "Built with Wevlo"\n          fi\n`
+        content: `name: Build\non:\n  push:\n    branches: ["${branch}"]\npermissions:\n  contents: write\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: 'temurin'\n          java-version: '17'\n      - uses: gradle/actions/setup-gradle@v4\n        with:\n          gradle-version: '8.7'\n      - run: gradle assembleDebug --no-daemon\n      - name: Upload Artifact\n        if: success()\n        uses: actions/upload-artifact@v4\n        with:\n          name: app-output\n          path: app/build/outputs/apk/**/*.apk\n          if-no-files-found: ignore\n      - name: Publish Release\n        if: success()\n        env:\n          GH_TOKEN: \${{ github.token }}\n        run: |\n          mapfile -t FILES < <(find app/build/outputs/apk -type f -name "*.apk" 2>/dev/null)\n          if [ \${#FILES[@]} -gt 0 ]; then\n            TAG="v${safeVerName}-\${{ github.run_number }}"\n            gh release create "$TAG" "\${FILES[@]}" --title "$TAG" --notes "Built with Wevlo" || gh release upload "$TAG" "\${FILES[@]}" --clobber\n          fi\n`
       }
     ];
 
-    const createdAtMs = Date.now() - 15000;
     for (const f of files) {
       await ghPutPipelineFile(repoFull, f.path, f.content, branch);
     }
@@ -659,13 +719,19 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, versionName = 
       try {
         const latest = (await ghFetch(`/repos/${repoFull}/actions/runs?per_page=1`)).workflow_runs?.[0];
         if (!latest) return;
-        if (new Date(latest.created_at).getTime() < createdAtMs) return;
+        if (prevRunId && latest.id === prevRunId) return;
         if (latest.status === "completed") {
           clearInterval(window.__wevloPipelineTimer);
           if (latest.conclusion === "success") {
-            const apk = (await ghFetch(`/repos/${repoFull}/releases/latest`)).assets?.find((a) => a.name.endsWith(".apk"));
+            const { apk, artifact } = await resolvePipelineOutputs(repoFull, latest.id, latest.run_number);
             if (apk) {
               logs.innerHTML += `<div class="mt-2"><button onclick="downloadPipelineApk('${apk.url}','${apk.name}','${apk.browser_download_url}')" class="btn-purple px-4 py-2 rounded-full text-xs font-bold inline-block">⬇ Download APK (${(apk.size / 1048576).toFixed(2)} MB)</button></div>`;
+            }
+            if (artifact) {
+              logs.innerHTML += `<div class="mt-2"><button onclick="downloadPipelineArtifact('${artifact.archive_download_url}','${artifact.name}','${latest.html_url}')" class="bg-emerald-600 text-white px-4 py-2 rounded-full text-xs font-bold inline-block">⬇ Download Artifact APK (${(artifact.size_in_bytes / 1048576).toFixed(2)} MB)</button></div>`;
+            }
+            if (!apk && !artifact) {
+              logs.innerHTML += `<div class="text-amber-600 font-bold mt-2">Build succeeded — <a class="underline" target="_blank" href="${latest.html_url}">Open GitHub Run ↗</a></div>`;
             }
           } else {
             logs.innerHTML += `<div class="text-rose-600 font-bold">Build Failed (${latest.conclusion}) — <a class="underline" target="_blank" href="${latest.html_url}">View Logs ↗</a></div>`;
@@ -677,12 +743,9 @@ async function runGithubApkPipeline({ repoName, appName, pkgName, versionName = 
     logs.innerHTML += `<div class="text-rose-600 font-bold">${escapeXml(e.message)}</div>`;
   }
 }
-// ======================================================
-// File 4/4: app.js (PART 2 of 2 — paste directly below PART 1)
-// ======================================================
 
 // ======================================================
-// 7. Personal Studio Pages
+// 7. Personal Studio Pages (Dashboard, Projects, Build APK)
 // ======================================================
 function renderDashboard() {
   const c = state.projects.length;
@@ -771,26 +834,11 @@ function renderBuildApk() {
         <p class="text-[11px] text-muted mt-0.5">প্রতিটি অ্যাপের Package ID আলাদা রাখলে ফোনের আগের অ্যাপ আপডেট হবে না।</p>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label class="font-bold text-muted">App Name</label>
-          <input value="${escapeHtmlAttr(proj.appName)}" oninput="updateActiveProjBuildField('${proj.id}','appName',this.value)" placeholder="My App" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/>
-        </div>
-        <div>
-          <label class="font-bold text-muted">Package Name (Unique ID)</label>
-          <input value="${escapeHtmlAttr(proj.pkgName)}" oninput="updateActiveProjBuildField('${proj.id}','pkgName',this.value)" placeholder="${prefix}.${defaultSlug}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
-        </div>
-        <div>
-          <label class="font-bold text-muted">Version Name</label>
-          <input value="${escapeHtmlAttr(proj.versionName)}" oninput="updateActiveProjBuildField('${proj.id}','versionName',this.value)" placeholder="1.0.0" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
-        </div>
-        <div>
-          <label class="font-bold text-muted">Version Code</label>
-          <input type="number" min="1" value="${escapeHtmlAttr(proj.versionCode)}" oninput="updateActiveProjBuildField('${proj.id}','versionCode',this.value)" placeholder="1" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
-        </div>
-        <div class="sm:col-span-2">
-          <label class="font-bold text-muted">GitHub Repository Name</label>
-          <input id="bRepoName" value="${escapeHtmlAttr(proj.repoName)}" oninput="updateActiveProjBuildField('${proj.id}','repoName',this.value)" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/>
-        </div>
+        <div><label class="font-bold text-muted">App Name</label><input value="${escapeHtmlAttr(proj.appName)}" oninput="updateActiveProjBuildField('${proj.id}','appName',this.value)" placeholder="My App" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent"/></div>
+        <div><label class="font-bold text-muted">Package Name (Unique ID)</label><input value="${escapeHtmlAttr(proj.pkgName)}" oninput="updateActiveProjBuildField('${proj.id}','pkgName',this.value)" placeholder="${prefix}.${defaultSlug}" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/></div>
+        <div><label class="font-bold text-muted">Version Name</label><input value="${escapeHtmlAttr(proj.versionName)}" oninput="updateActiveProjBuildField('${proj.id}','versionName',this.value)" placeholder="1.0.0" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/></div>
+        <div><label class="font-bold text-muted">Version Code</label><input type="number" min="1" value="${escapeHtmlAttr(proj.versionCode)}" oninput="updateActiveProjBuildField('${proj.id}','versionCode',this.value)" placeholder="1" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/></div>
+        <div class="sm:col-span-2"><label class="font-bold text-muted">GitHub Repository Name</label><input id="bRepoName" value="${escapeHtmlAttr(proj.repoName)}" oninput="updateActiveProjBuildField('${proj.id}','repoName',this.value)" class="w-full mt-1 border border-soft rounded-xl px-3 py-2 bg-transparent font-mono"/></div>
       </div>
       <div class="space-y-1 border border-soft rounded-2xl p-3.5">
         ${toggleRow("Enable JavaScript", "jsEnabled")}
@@ -801,6 +849,9 @@ function renderBuildApk() {
       <div id="buildProjLog" class="hidden border border-soft rounded-2xl p-4"></div>
     </div>`;
 }
+// === END: app.js — PART 3 OF 4 ===
+
+// === START: app.js — PART 4 OF 4 (paste directly below PART 3) ===
 
 function renderWeb2App() {
   const w = state.web2app;
@@ -858,7 +909,18 @@ function renderTemplates() {
 function renderPreview() {
   const proj = getActiveProject();
   if (!proj) return `<div class="wevlo-card p-8 text-center text-xs text-muted">Please create a project first.</div>`;
-  const doc = `<!DOCTYPE html><html><head><style>${proj.css}</style></head><body>${proj.html}<script>${proj.js}<\/script></body></html>`;
+  let htmlBody = proj.html || "";
+  let cssBody = proj.css || "";
+  let jsBody = proj.js || "";
+  if (Array.isArray(proj.files) && proj.files.length > 0) {
+    const htmlFile = proj.files.find((f) => f.name === "index.html") || proj.files.find((f) => f.name.endsWith(".html"));
+    if (htmlFile) htmlBody = htmlFile.content || "";
+    const cssFiles = proj.files.filter((f) => f.name.endsWith(".css"));
+    if (cssFiles.length) cssBody = cssFiles.map((f) => f.content || "").join("\n");
+    const jsFiles = proj.files.filter((f) => f.name.endsWith(".js"));
+    if (jsFiles.length) jsBody = jsFiles.map((f) => f.content || "").join("\n");
+  }
+  const doc = `<!DOCTYPE html><html><head><style>${cssBody}</style></head><body>${htmlBody}<script>${jsBody}<\/script></body></html>`;
   const w = { phone: "max-w-[360px]", tablet: "max-w-[700px]", desktop: "max-w-full" }[state.previewDevice];
   return `<div class="wevlo-card p-4 flex justify-between items-center"><b class="text-sm">${escapeHtmlAttr(proj.name)}</b><div class="flex gap-1.5">${["phone", "tablet", "desktop"].map((d) => `<button onclick="state.previewDevice='${d}';render()" class="px-3 py-1 rounded-full text-xs font-bold capitalize ${state.previewDevice === d ? "btn-purple" : "border border-soft"}">${d}</button>`).join("")}</div></div><div class="flex justify-center"><iframe class="${w} w-full h-[520px] bg-white rounded-3xl border-4 border-slate-800 shadow-xl" srcdoc="${escapeHtmlAttr(doc)}"></iframe></div>`;
 }
@@ -1105,3 +1167,6 @@ window.render = function render() {
 
 if (state.githubToken) window.loadGithubRepos().then(() => window.render());
 else window.render();
+// === END: app.js — PART 4 OF 4 ===
+
+
