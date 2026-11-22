@@ -1,4 +1,5 @@
 // ======================================================
+// File 2/4: aide-features.js
 // AIDE Advanced Engine (Java, Kotlin, Dart/Flutter, Python, JS, XML, YAML, Markdown)
 // ======================================================
 
@@ -103,9 +104,25 @@ const HINTS_BY_TYPE = {
     "minSdk 24",
     "targetSdk 34"
   ],
-  html: ["<!DOCTYPE html>", "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />", "<link rel=\"stylesheet\" href=\"\" />", "<script src=\"\"></script>"],
-  css: ["display: flex;", "justify-content: center;", "align-items: center;", "border-radius: 16px;", "background-color: #6d28d9;"],
-  js: ["document.getElementById(\"\")", "addEventListener(\"click\", () => {})", "console.log()", "fetch(\"\")"],
+  html: [
+    "<!DOCTYPE html>",
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
+    "<link rel=\"stylesheet\" href=\"\" />",
+    "<script src=\"\"></script>"
+  ],
+  css: [
+    "display: flex;",
+    "justify-content: center;",
+    "align-items: center;",
+    "border-radius: 16px;",
+    "background-color: #6d28d9;"
+  ],
+  js: [
+    "document.getElementById(\"\")",
+    "addEventListener(\"click\", () => {})",
+    "console.log()",
+    "fetch(\"\")"
+  ],
   yml: [
     "name: Build",
     "on:",
@@ -120,42 +137,53 @@ const HINTS_BY_TYPE = {
   ]
 };
 
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function mountCodeMirror({ hostId, value, filePath, errorLines = [], onChange, onCursor }) {
   const host = document.getElementById(hostId);
-  if (!host) return;
+  if (!host) return null;
   const CM = await ensureCodeMirror();
-  if (!document.getElementById(hostId)) return;
+  const latestHost = document.getElementById(hostId);
+  if (!latestHost) return null;
 
-  const mode = filePath.endsWith(".java")
-    ? "text/x-java"
-    : filePath.endsWith(".kt")
-    ? "text/x-kotlin"
-    : filePath.endsWith(".dart")
-    ? "application/dart"
-    : filePath.endsWith(".py")
-    ? "text/x-python"
-    : filePath.endsWith(".yaml") || filePath.endsWith(".yml")
-    ? "text/x-yaml"
-    : filePath.endsWith(".md")
-    ? "text/x-markdown"
-    : filePath.endsWith(".properties") || filePath.endsWith(".spec")
-    ? "text/x-properties"
-    : filePath.endsWith(".json")
-    ? "application/json"
-    : filePath.endsWith(".xml")
-    ? "application/xml"
-    : filePath.endsWith(".gradle")
-    ? "text/x-groovy"
-    : filePath.endsWith(".css")
-    ? "text/css"
-    : filePath.endsWith(".js")
-    ? "text/javascript"
-    : "htmlmixed";
+  const mode =
+    filePath.endsWith(".java")
+      ? "text/x-java"
+      : filePath.endsWith(".kt") || filePath.endsWith(".kts")
+      ? "text/x-kotlin"
+      : filePath.endsWith(".dart")
+      ? "application/dart"
+      : filePath.endsWith(".py")
+      ? "text/x-python"
+      : filePath.endsWith(".yaml") || filePath.endsWith(".yml")
+      ? "text/x-yaml"
+      : filePath.endsWith(".md")
+      ? "text/x-markdown"
+      : filePath.endsWith(".properties") || filePath.endsWith(".spec")
+      ? "text/x-properties"
+      : filePath.endsWith(".json")
+      ? "application/json"
+      : filePath.endsWith(".xml")
+      ? "application/xml"
+      : filePath.endsWith(".gradle")
+      ? "text/x-groovy"
+      : filePath.endsWith(".css")
+      ? "text/css"
+      : filePath.endsWith(".js")
+      ? "text/javascript"
+      : "htmlmixed";
 
   const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
-  host.innerHTML = "";
-  const cm = CM(host, {
+  latestHost.innerHTML = "";
+  const cm = CM(latestHost, {
     value: value || "",
     mode,
     theme: "dracula",
@@ -180,11 +208,15 @@ export async function mountCodeMirror({ hostId, value, filePath, errorLines = []
   });
 
   errorLines.forEach((ln) => {
-    if (ln > 0 && ln <= cm.lineCount()) cm.addLineClass(ln - 1, "background", "bg-rose-500/20");
+    if (ln > 0 && ln <= cm.lineCount()) {
+      cm.addLineClass(ln - 1, "background", "bg-rose-500/20");
+    }
   });
 
   setTimeout(() => cm.refresh(), 60);
   window.__wevloCM = cm;
+  window.__wevloCMPath = filePath;
+  window.__wevloCMHostId = hostId;
   return cm;
 }
 
@@ -228,11 +260,21 @@ export async function runEditorToolbarAction(action, showToast) {
 export function showAndroidHints(cm, filePath) {
   const CM = window.CodeMirror;
   if (!CM || !cm) return;
-  const cur = cm.getCursor(), token = cm.getTokenAt(cur), word = token.string.trim();
-  const ext = filePath.split(".").pop();
-  const pool = HINTS_BY_TYPE[ext === "yaml" ? "yml" : ext] || HINTS_BY_TYPE.java;
+  const cur = cm.getCursor();
+  const token = cm.getTokenAt(cur);
+  const word = token.string.trim();
+  const ext = (filePath || "").split(".").pop();
+  const pool = HINTS_BY_TYPE[ext === "yaml" ? "yml" : ext === "kts" ? "kt" : ext] || HINTS_BY_TYPE.java;
   const matches = word ? pool.filter((h) => h.toLowerCase().includes(word.toLowerCase())) : pool;
-  CM.showHint(cm, () => ({ list: matches.length ? matches : pool, from: CM.Pos(cur.line, token.start), to: CM.Pos(cur.line, token.end) }), { completeSingle: false });
+  CM.showHint(
+    cm,
+    () => ({
+      list: matches.length ? matches : pool,
+      from: CM.Pos(cur.line, token.start),
+      to: CM.Pos(cur.line, token.end)
+    }),
+    { completeSingle: false }
+  );
 }
 
 export function renderVisualXmlDesigner(xmlStr, selectedIdx = 0) {
@@ -246,26 +288,62 @@ export function renderVisualXmlDesigner(xmlStr, selectedIdx = 0) {
   const widgets = Array.from(doc.querySelectorAll("TextView, Button, EditText, ImageView, Switch, CheckBox"));
   const attr = (el, name, def = "") => el.getAttribute("android:" + name) || def;
   const sel = widgets[selectedIdx] || null;
+
   const previewHtml = widgets.length
-    ? widgets.map((w, idx) => {
-        const tag = w.tagName, txt = attr(w, "text", tag), color = attr(w, "textColor", tag === "Button" ? "#FFFFFF" : "#0F172A"), bg = attr(w, "background", tag === "Button" ? "#6D28D9" : "transparent"), ring = idx === selectedIdx ? "ring-2 ring-amber-400" : "";
-        if (tag === "Button") return `<button onclick="selectXmlWidget(${idx})" style="background:${bg};color:${color}" class="w-full py-2.5 px-4 rounded-xl font-bold text-xs shadow ${ring}">${txt}</button>`;
-        if (tag === "EditText") return `<div onclick="selectXmlWidget(${idx})" class="w-full border border-slate-300 bg-white rounded-xl px-3 py-2 text-xs text-slate-400 text-left ${ring}">${txt || "Input..."}</div>`;
-        if (tag === "ImageView") return `<div onclick="selectXmlWidget(${idx})" class="w-20 h-20 mx-auto rounded-2xl bg-purple-100 text-purple-600 flex items-center justify-center text-xs font-bold ${ring}">IMG</div>`;
-        return `<p onclick="selectXmlWidget(${idx})" style="color:${color}" class="text-sm font-bold py-1 px-2 rounded ${ring}">${txt}</p>`;
-      }).join("")
+    ? widgets
+        .map((w, idx) => {
+          const tag = w.tagName;
+          const txt = escapeHtml(attr(w, "text", tag));
+          const color = escapeHtml(attr(w, "textColor", tag === "Button" ? "#FFFFFF" : "#0F172A"));
+          const bg = escapeHtml(attr(w, "background", tag === "Button" ? "#6D28D9" : "transparent"));
+          const ring = idx === selectedIdx ? "ring-2 ring-amber-400" : "";
+          if (tag === "Button") {
+            return `<button onclick="selectXmlWidget(${idx})" style="background:${bg};color:${color}" class="w-full py-2.5 px-4 rounded-xl font-bold text-xs shadow ${ring}">${txt}</button>`;
+          }
+          if (tag === "EditText") {
+            return `<div onclick="selectXmlWidget(${idx})" class="w-full border border-slate-300 bg-white rounded-xl px-3 py-2 text-xs text-slate-400 text-left ${ring}">${txt || "Input..."}</div>`;
+          }
+          if (tag === "ImageView") {
+            return `<div onclick="selectXmlWidget(${idx})" class="w-20 h-20 mx-auto rounded-2xl bg-purple-100 text-purple-600 flex items-center justify-center text-xs font-bold ${ring}">IMG</div>`;
+          }
+          return `<p onclick="selectXmlWidget(${idx})" style="color:${color}" class="text-sm font-bold py-1 px-2 rounded ${ring}">${txt}</p>`;
+        })
+        .join("")
     : `<p class="text-xs text-slate-400">No widgets yet — tap "+ Add" above!</p>`;
 
   return `
     <div class="flex-1 overflow-y-auto p-3 space-y-3 bg-[#121024]">
-      <div class="flex gap-1.5 overflow-x-auto pb-1">${["TextView", "Button", "EditText", "ImageView", "Switch"].map((t) => `<button onclick="addXmlWidget('${t}')" class="px-3 py-1.5 rounded-xl bg-[#242047] hover:bg-purple-600 text-xs font-bold text-purple-200 shrink-0">+ ${t}</button>`).join("")}</div>
+      <div class="flex gap-1.5 overflow-x-auto pb-1">
+        ${["TextView", "Button", "EditText", "ImageView", "Switch"]
+          .map((t) => `<button onclick="addXmlWidget('${t}')" class="px-3 py-1.5 rounded-xl bg-[#242047] hover:bg-purple-600 text-xs font-bold text-purple-200 shrink-0">+ ${t}</button>`)
+          .join("")}
+      </div>
       <div class="bg-[#1b1836] rounded-3xl p-4 flex justify-center border border-[#2d2854]">
         <div class="w-[240px] min-h-[320px] bg-[#f8f7fc] text-slate-900 rounded-[28px] border-[6px] border-slate-950 shadow-2xl overflow-hidden flex flex-col">
           <div class="bg-purple-700 text-white text-[11px] font-bold px-4 py-2">Android Layout Preview</div>
           <div class="flex-1 p-4 flex flex-col justify-center items-center gap-3">${previewHtml}</div>
         </div>
       </div>
-      ${sel ? `<div class="bg-[#191632] border border-[#2f2a57] rounded-2xl p-3.5 space-y-2.5 text-xs"><div class="flex justify-between items-center"><b class="text-purple-300">&lt;${sel.tagName}&gt;</b><button onclick="deleteXmlWidget(${selectedIdx})" class="text-rose-400 font-bold">Remove</button></div><div class="grid grid-cols-2 gap-2"><div><label class="text-slate-400">Text</label><input value="${attr(sel, "text")}" oninput="updateXmlWidgetProp(${selectedIdx},'text',this.value)" class="w-full mt-1 bg-[#121024] border border-[#342f61] rounded-lg px-2.5 py-1.5 text-white" /></div><div><label class="text-slate-400">Color</label><input value="${attr(sel, "textColor", "#0F172A")}" oninput="updateXmlWidgetProp(${selectedIdx},'textColor',this.value)" class="w-full mt-1 bg-[#121024] border border-[#342f61] rounded-lg px-2.5 py-1.5 text-white" /></div></div></div>` : ""}
+      ${
+        sel
+          ? `<div class="bg-[#191632] border border-[#2f2a57] rounded-2xl p-3.5 space-y-2.5 text-xs">
+              <div class="flex justify-between items-center">
+                <b class="text-purple-300">&lt;${sel.tagName}&gt;</b>
+                <button onclick="deleteXmlWidget(${selectedIdx})" class="text-rose-400 font-bold">Remove</button>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-slate-400">Text</label>
+                  <input value="${escapeHtml(attr(sel, "text"))}" oninput="updateXmlWidgetProp(${selectedIdx},'text',this.value)" class="w-full mt-1 bg-[#121024] border border-[#342f61] rounded-lg px-2.5 py-1.5 text-white" />
+                </div>
+                <div>
+                  <label class="text-slate-400">Color</label>
+                  <input value="${escapeHtml(attr(sel, "textColor", "#0F172A"))}" oninput="updateXmlWidgetProp(${selectedIdx},'textColor',this.value)" class="w-full mt-1 bg-[#121024] border border-[#342f61] rounded-lg px-2.5 py-1.5 text-white" />
+                </div>
+              </div>
+            </div>`
+          : ""
+      }
     </div>`;
 }
 
